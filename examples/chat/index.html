@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Rabbat Chat</title>
+    <style>
+      :root { color-scheme: light dark; --line: #8883; --accent: #6d5efc; }
+      * { box-sizing: border-box; }
+      body { font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, sans-serif; margin: 0; }
+      #root { height: 100vh; }
+      .app { display: grid; grid-template-columns: 240px 1fr; height: 100vh; }
+      .sidebar { border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
+      .brand { padding: 14px 16px; font-weight: 700; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--line); }
+      .dot { width: 8px; height: 8px; border-radius: 50%; background: #aaa; }
+      .dot.open { background: #38c172; } .dot.connecting { background: #f6c343; } .dot.closed { background: #e3342f; }
+      .channels { flex: 1; overflow-y: auto; padding: 8px; }
+      .channel { padding: 8px 10px; border-radius: 8px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .channel:hover { background: #8881; } .channel.active { background: var(--accent); color: white; }
+      .new { padding: 10px; border-top: 1px solid var(--line); }
+      .main { display: flex; flex-direction: column; min-height: 0; }
+      .feed { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 6px; }
+      .more { align-self: center; margin: 8px; font-size: 13px; opacity: .7; cursor: pointer; background: none; border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px; color: inherit; }
+      .msg { max-width: 70ch; }
+      .msg .who { font-weight: 600; margin-right: 8px; }
+      .msg .when { font-size: 11px; opacity: .45; margin-left: 8px; }
+      form.composer { display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--line); }
+      input, button { font: inherit; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line); background: transparent; color: inherit; }
+      input { width: 100%; }
+      .composer input { flex: 1; } .composer .who-input { flex: 0 0 110px; }
+      button.send { background: var(--accent); color: white; border: none; cursor: pointer; }
+      .empty { margin: auto; opacity: .5; }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
