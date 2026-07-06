@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process"
-import { distWranglerConfig, runCodegen } from "./codegen.js"
+import { distWranglerConfig, expectedDistWranglerConfig, runCodegen } from "./codegen.js"
 
 const HELP = `rabbat — reactive database on Cloudflare (R2 + Durable Objects + Effect)
 
@@ -39,7 +39,15 @@ async function main(): Promise<void> {
     case "deploy": {
       const code = await run("vite", ["build"])
       if (code !== 0) process.exit(code)
-      process.exit(await run("wrangler", ["deploy", "-c", distWranglerConfig(process.cwd()), ...rest]))
+      const cfg = distWranglerConfig(process.cwd())
+      if (!cfg) {
+        process.stderr.write(
+          `rabbat: no deploy config found (expected ${expectedDistWranglerConfig(process.cwd())}). ` +
+            `Did \`vite build\` succeed and emit the worker?\n`,
+        )
+        process.exit(1)
+      }
+      process.exit(await run("wrangler", ["deploy", "-c", cfg, ...rest]))
       break
     }
     case "codegen":

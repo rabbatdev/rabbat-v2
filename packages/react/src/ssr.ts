@@ -20,6 +20,11 @@ export async function preloadQuery<Ref extends FunctionReference<"query", any, a
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name: ref.name, args, pagination: opts?.pagination, token: opts?.token ?? null }),
   })
+  // Never seed an error body as data: a non-OK response has no valid Preload.
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "")
+    throw new Error(`preloadQuery ${ref.name} failed: ${res.status} ${res.statusText}${detail ? ` — ${detail}` : ""}`)
+  }
   const preload = (await res.json()) as Preload
   return { key: preloadKey(ref.name, args), preload }
 }

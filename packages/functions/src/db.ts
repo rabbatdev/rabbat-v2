@@ -68,10 +68,22 @@ export class QueryBuilder<R extends AnyRow> {
     return { table: this.table, filters: this.filters, order: this.orderKeys }
   }
 
-  collect(): Promise<R[]> {
-    return this.exec.collect(this.spec(), COLLECT_LIMIT) as Promise<R[]>
+  async collect(): Promise<R[]> {
+    // Over-fetch by one so hitting the cap is a loud error, never a silently
+    // truncated result (a value subscription over a truncated collect() would
+    // stream wrong data indefinitely).
+    const rows = await this.exec.collect(this.spec(), COLLECT_LIMIT + 1)
+    if (rows.length > COLLECT_LIMIT) {
+      throw new Error(
+        `collect() on "${this.table}" exceeds ${COLLECT_LIMIT} rows — use take(n) or paginate()`,
+      )
+    }
+    return rows as R[]
   }
   take(n: number): Promise<R[]> {
+    if (!Number.isInteger(n) || n < 0 || n > COLLECT_LIMIT) {
+      throw new Error(`take(${n}): expected an integer in [0, ${COLLECT_LIMIT}]`)
+    }
     return this.exec.collect(this.spec(), n) as Promise<R[]>
   }
   async first(): Promise<R | null> {

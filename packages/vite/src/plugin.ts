@@ -74,12 +74,21 @@ export function rabbat(options: RabbatOptions = {}): PluginOption {
     },
     configureServer(server) {
       const onChange = (file: string) => {
-        if (file.startsWith(disco.functionsDir) && !file.includes("_generated")) {
-          generateAll(discover(root), name, compatDate)
+        const inFunctions = file.startsWith(disco.functionsDir) && !file.includes("_generated")
+        const isSchema = file === disco.schemaPath
+        // Also regenerate when a function file's *exports* change (edit → the api
+        // tree can gain/lose entries) or the schema changes — not only add/unlink.
+        if (inFunctions || isSchema) {
+          try {
+            generateAll(discover(root), name, compatDate)
+          } catch (e) {
+            server.config.logger.error(`rabbat: codegen failed: ${e instanceof Error ? e.message : String(e)}`)
+          }
         }
       }
       server.watcher.on("add", onChange)
       server.watcher.on("unlink", onChange)
+      server.watcher.on("change", onChange)
     },
   }
 

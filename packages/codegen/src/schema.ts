@@ -22,6 +22,7 @@ function scheduledTable(): TableInfo {
       { name: "created_at", kind: "int", nullable: false },
     ],
     indexes: [{ name: "run_at", columns: ["run_at", "id"], unique: false }],
+    strictIndexes: false,
   }
 }
 

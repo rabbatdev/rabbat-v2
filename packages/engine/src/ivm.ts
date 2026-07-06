@@ -75,6 +75,33 @@ export class Subscription {
     return false
   }
 
+  /**
+   * For changes that {@link windowCanChange} rejected (all provably outside the
+   * loaded span), compute a metadata-only delta: an off-window insert/delete
+   * doesn't touch the visible rows but does change `total`, which drives counts
+   * and scrollbar sizing. Returns null when nothing observable changed.
+   */
+  totalOnlyDelta(changes: ReadonlyArray<RowChange>): Delta | null {
+    if (!this.seeded) return null
+    let net = 0
+    for (const change of changes) {
+      if (!this.inGroup(change)) continue
+      const inBefore = change.before !== null && matchesRow(change.before, this.filters)
+      const inAfter = change.after !== null && matchesRow(change.after, this.filters)
+      net += (inAfter ? 1 : 0) - (inBefore ? 1 : 0)
+    }
+    if (net === 0) return null
+    this.total += net
+    return {
+      upserts: [],
+      removes: [],
+      hasOlder: this.hasOlder,
+      hasNewer: this.hasNewer,
+      total: this.total,
+      changed: true,
+    }
+  }
+
   private visibleByPk(pk: Scalar): boolean {
     return this.last.has(pkStr(pk))
   }
@@ -85,6 +112,34 @@ export class Subscription {
     if (belowTop && this.hasOlder) return false
     if (aboveBottom && this.hasNewer) return false
     return true
+  }
+
+  /**
+   * Seed the IVM baseline to a page the client already holds (a watermark
+   * resume: same LSN ⇒ identical materialization), WITHOUT emitting its rows.
+   * Future commits diff against this baseline, so the client resumes live with
+   * no window refetch. Returns a metadata-only delta (empty upserts/removes).
+   */
+  seedBaseline(page: PageOutput): Delta {
+    const pk = page.pk
+    this.order = page.order
+    const next = new Map<string, Row>()
+    for (const row of page.rows) next.set(pkStr(row[pk] ?? null), row)
+    this.last = next
+    this.lo = page.rows.length ? page.rows[0]! : null
+    this.hi = page.rows.length ? page.rows[page.rows.length - 1]! : null
+    this.hasOlder = page.hasOlder
+    this.hasNewer = page.hasNewer
+    this.total = page.total
+    this.seeded = true
+    return {
+      upserts: [],
+      removes: [],
+      hasOlder: page.hasOlder,
+      hasNewer: page.hasNewer,
+      total: page.total,
+      changed: false,
+    }
   }
 
   /** Diff a freshly materialized page against what the client last saw. */

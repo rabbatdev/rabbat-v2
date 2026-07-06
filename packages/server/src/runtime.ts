@@ -93,9 +93,15 @@ export class Runtime {
     return Promise.resolve(this.config.auth ? this.config.auth(token) : null)
   }
 
-  private require(name: string): AnyRegistered {
+  /**
+   * Resolve a function by name. `fromClient` requests (WebSocket / HTTP) may not
+   * invoke `internal*` functions — those are server-only (scheduler, action
+   * `ctx.run*`), and app authors rely on that to skip auth checks inside them.
+   */
+  private require(name: string, fromClient: boolean): AnyRegistered {
     const fn = this.registry.get(name)
     if (!fn) throw new Error(`unknown function: ${name}`)
+    if (fromClient && fn.internal) throw new Error(`unknown function: ${name}`)
     return fn
   }
 
@@ -109,7 +115,7 @@ export class Runtime {
     }
   }
 
-  private readerExecutor(recorder: Recorder): DbExecutor {
+  private readerExecutor(recorder: Recorder, overlay?: WriteOverlay): DbExecutor {
     const engine = this.engine
     const pkOf = (t: string) => this.pkOf(t)
     return {
@@ -133,6 +139,10 @@ export class Runtime {
       },
       get: async (table, id) => {
         recorder.reads.push({ table, filters: [{ column: pkOf(table), op: "=", value: id }] })
+        // Read-your-writes for point reads: a mutation's own buffered
+        // insert/patch/delete is visible to a subsequent get() in the same handler.
+        const pending = overlay?.get(table, id)
+        if (pending !== undefined) return pending
         return run(engine.get(table, id))
       },
       insert: () => Promise.reject(new Error("cannot write from a query")),
@@ -142,8 +152,13 @@ export class Runtime {
   }
 
   /** Run a query, capturing its reactive dependencies / paginated window. */
-  async runQuery(name: string, rawArgs: Record<string, unknown>, identity: Identity | null): Promise<QueryResult> {
-    const fn = this.require(name)
+  async runQuery(
+    name: string,
+    rawArgs: Record<string, unknown>,
+    identity: Identity | null,
+    fromClient = true,
+  ): Promise<QueryResult> {
+    const fn = this.require(name, fromClient)
     if (fn.__kind !== "query") throw new Error(`${name} is not a query`)
     const args = validateArgs(fn.argsValidator, rawArgs)
     const recorder: Recorder = { reads: [] }
@@ -163,14 +178,16 @@ export class Runtime {
     name: string,
     rawArgs: Record<string, unknown>,
     identity: Identity | null,
+    fromClient = true,
   ): Promise<MutationResult> {
-    const fn = this.require(name)
+    const fn = this.require(name, fromClient)
     if (fn.__kind !== "mutation") throw new Error(`${name} is not a mutation`)
     const args = validateArgs(fn.argsValidator, rawArgs)
     const buffer: Mutation[] = []
     const scheduled: ScheduledCall[] = []
     const recorder: Recorder = { reads: [] }
-    const exec = this.writerExecutor(recorder, buffer)
+    const overlay = new WriteOverlay((t) => this.pkOf(t))
+    const exec = this.writerExecutor(recorder, buffer, overlay)
     const ctx = {
       ...this.baseCtx(identity),
       db: makeWriter(exec),
@@ -182,37 +199,71 @@ export class Runtime {
     return { value, lsn, changes, scheduled }
   }
 
+  /**
+   * Dispatch a scheduled job (from an alarm) by its registered kind. A scheduled
+   * mutation commits changes; a scheduled action runs with no transaction. These
+   * are server-trusted (they may target internal functions).
+   */
+  async runScheduled(name: string, args: Record<string, unknown>): Promise<MutationResult> {
+    const fn = this.registry.get(name)
+    if (!fn) throw new Error(`unknown function: ${name}`)
+    if (fn.__kind === "mutation") return this.runMutation(name, args, null, false)
+    if (fn.__kind === "action") {
+      const value = await this.runAction(name, args, null, false)
+      return { value, lsn: this.engine.lsn(), changes: [], scheduled: [] }
+    }
+    throw new Error(`${name} is not schedulable`)
+  }
+
   /** Run an action: no transaction; DB access only via runQuery/runMutation. */
-  async runAction(name: string, rawArgs: Record<string, unknown>, identity: Identity | null): Promise<unknown> {
-    const fn = this.require(name)
+  async runAction(
+    name: string,
+    rawArgs: Record<string, unknown>,
+    identity: Identity | null,
+    fromClient = true,
+  ): Promise<unknown> {
+    const fn = this.require(name, fromClient)
     if (fn.__kind !== "action") throw new Error(`${name} is not an action`)
     const args = validateArgs(fn.argsValidator, rawArgs)
     const scheduled: ScheduledCall[] = []
+    // ctx.run* are server-trusted: an action may orchestrate internal functions.
     const ctx = {
       ...this.baseCtx(identity),
       scheduler: this.scheduler(scheduled),
       runQuery: (ref: { name: string }, a: Record<string, unknown>) =>
-        this.runQuery(ref.name, a, identity).then((r) => r.value),
+        this.runQuery(ref.name, a, identity, false).then((r) => r.value),
       runMutation: (ref: { name: string }, a: Record<string, unknown>) =>
-        this.runMutation(ref.name, a, identity).then((r) => r.value),
-      runAction: (ref: { name: string }, a: Record<string, unknown>) => this.runAction(ref.name, a, identity),
+        this.runMutation(ref.name, a, identity, false).then((r) => r.value),
+      runAction: (ref: { name: string }, a: Record<string, unknown>) =>
+        this.runAction(ref.name, a, identity, false),
     }
     for (const mw of fn.middleware) await mw(ctx)
     return fn.handler(ctx, args)
   }
 
-  private writerExecutor(recorder: Recorder, buffer: Mutation[]): DbExecutor {
-    const reader = this.readerExecutor(recorder)
+  private writerExecutor(recorder: Recorder, buffer: Mutation[], overlay: WriteOverlay): DbExecutor {
+    const reader = this.readerExecutor(recorder, overlay)
+    const engine = this.engine
     return {
       ...reader,
       insert: async (table, row) => {
         buffer.push({ kind: "insert", table, row })
+        overlay.set(table, row[this.pkOf(table)] ?? null, row)
       },
       patch: async (table, id, fields) => {
         buffer.push({ kind: "patch", table, pk: id, fields })
+        // Merge onto the current (buffered or committed) row so a later get()
+        // reflects the patch.
+        const current = overlay.has(table, id) ? overlay.get(table, id) : await run(engine.get(table, id))
+        if (current) {
+          const next: Row = { ...current }
+          for (const [k, v] of Object.entries(fields)) if (v !== undefined) next[k] = v as Row[string]
+          overlay.set(table, id, next)
+        }
       },
       remove: async (table, id) => {
         buffer.push({ kind: "delete", table, pk: id })
+        overlay.set(table, id, null)
       },
     }
   }
@@ -230,6 +281,28 @@ export class Runtime {
 interface Recorder {
   reads: Array<{ table: string; filters: ReadonlyArray<Filter> }>
   page?: CapturedPage
+}
+
+/**
+ * A mutation's own buffered writes, keyed by (table, pk), so a point `get()`
+ * later in the same handler observes read-your-writes. `null` marks a deleted
+ * row. (Range reads within a mutation still observe committed state.)
+ */
+class WriteOverlay {
+  private readonly rows = new Map<string, Row | null>()
+  constructor(private readonly pkOf: (table: string) => string) {}
+  private key(table: string, pk: Scalar): string {
+    return `${table} ${typeof pk} ${String(pk)}`
+  }
+  has(table: string, pk: Scalar): boolean {
+    return this.rows.has(this.key(table, pk))
+  }
+  get(table: string, pk: Scalar): Row | null | undefined {
+    return this.rows.get(this.key(table, pk))
+  }
+  set(table: string, pk: Scalar, row: Row | null): void {
+    this.rows.set(this.key(table, pk), row)
+  }
 }
 
 function isRegistered(v: unknown): v is AnyRegistered {

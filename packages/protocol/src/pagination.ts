@@ -20,13 +20,27 @@ export const Anchor = Schema.Union([
 export type Anchor = typeof Anchor.Type
 
 /**
+ * Hard protocol ceiling for one side of a window. This bounds the rows a single
+ * subscription can force the partition DO to materialize in memory — a client
+ * asking for more is rejected at decode, before any engine work. Servers may
+ * clamp lower; they can never accept more.
+ */
+export const MAX_WINDOW_SIDE = 1000
+
+/** A window side: a non-negative integer no larger than `MAX_WINDOW_SIDE`. */
+const WindowSide = Schema.Number.check(
+  Schema.isInt(),
+  Schema.isBetween({ minimum: 0, maximum: MAX_WINDOW_SIDE }),
+)
+
+/**
  * A live, bi-directional window: load `before` rows before the anchor and
  * `after` rows at/after it. Growing `before`/`after` independently is what makes
  * scrolling infinite in both directions; moving the `anchor` is jump-to-item.
  */
 export const PaginationOpts = Schema.Struct({
-  before: Schema.Number,
-  after: Schema.Number,
+  before: WindowSide,
+  after: WindowSide,
   anchor: Anchor,
 })
 export type PaginationOpts = typeof PaginationOpts.Type

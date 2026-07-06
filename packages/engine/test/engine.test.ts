@@ -228,3 +228,109 @@ function res(row: Row | null): Row {
   if (!row) throw new Error("expected a row")
   return row
 }
+
+// ── Production-hardening regression tests ─────────────────────────────────────
+
+const uniqueSchema = compileSchema(
+  defineSchema({
+    users: defineTable(
+      { id: s.text().primaryKey(), email: s.text().unique(), age: s.int() },
+      { indexes: [{ name: "by_org_name", columns: ["email", "age"], unique: true }] },
+    ),
+  }),
+)
+
+const uniqueLayer = () =>
+  EngineLive(uniqueSchema).pipe(
+    Layer.provide(LsmStoreLive({ prefix: "u", flushEntries: 4 })),
+    Layer.provide(MemoryBlobStore()),
+  )
+const runU = <A, E>(eff: Effect.Effect<A, E, Engine>) =>
+  Effect.runPromise(Effect.provide(eff, uniqueLayer()) as Effect.Effect<A, E, never>)
+
+describe("unique constraints", () => {
+  it("rejects a second row with a duplicate unique value (different pk)", async () => {
+    const err = await runU(
+      Effect.gen(function* () {
+        const engine = yield* Engine
+        yield* engine.mutate([{ kind: "insert", table: "users", row: { id: "u1", email: "x@y.com", age: 20 } }])
+        return yield* Effect.flip(
+          engine.mutate([{ kind: "insert", table: "users", row: { id: "u2", email: "x@y.com", age: 30 } }]),
+        )
+      }),
+    )
+    expect((err as { _tag: string })._tag).toBe("UniqueViolation")
+  })
+
+  it("allows re-inserting the same pk (upsert) without a false positive", async () => {
+    const rows = await runU(
+      Effect.gen(function* () {
+        const engine = yield* Engine
+        yield* engine.mutate([{ kind: "insert", table: "users", row: { id: "u1", email: "x@y.com", age: 20 } }])
+        yield* engine.mutate([{ kind: "insert", table: "users", row: { id: "u1", email: "x@y.com", age: 21 } }])
+        return res(yield* engine.get("users", "u1"))
+      }),
+    )
+    expect(rows.age).toBe(21)
+  })
+})
+
+describe("value validation", () => {
+  it("rejects non-finite numbers and wrong types at insert", async () => {
+    const bad = (row: Row) =>
+      runU(
+        Effect.gen(function* () {
+          const engine = yield* Engine
+          return yield* Effect.flip(engine.mutate([{ kind: "insert", table: "users", row }]))
+        }),
+      )
+    expect(((await bad({ id: "a", email: "e", age: Infinity })) as { _tag: string })._tag).toBe("QueryError")
+    expect(((await bad({ id: "a", email: "e", age: 1.5 })) as { _tag: string })._tag).toBe("QueryError")
+    expect(((await bad({ id: "a", email: 5, age: 1 })) as { _tag: string })._tag).toBe("QueryError")
+  })
+
+  it("rejects unknown columns and pk changes in a patch", async () => {
+    const bad = await runU(
+      Effect.gen(function* () {
+        const engine = yield* Engine
+        yield* engine.mutate([{ kind: "insert", table: "users", row: { id: "u1", email: "x@y.com", age: 20 } }])
+        return yield* Effect.flip(
+          engine.mutate([{ kind: "patch", table: "users", pk: "u1", fields: { nope: 1 } as Row }]),
+        )
+      }),
+    )
+    expect((bad as { _tag: string })._tag).toBe("QueryError")
+  })
+})
+
+describe("multi-store isolation (shared bucket)", () => {
+  it("two stores under different prefixes never collide", async () => {
+    const bucket = MemoryBlobStore()
+    const mk = (prefix: string) =>
+      EngineLive(schema).pipe(Layer.provide(LsmStoreLive({ prefix, flushEntries: 2 })), Layer.provide(bucket))
+    const runP = <A, E>(eff: Effect.Effect<A, E, Engine>, prefix: string) =>
+      Effect.runPromise(Effect.provide(eff, mk(prefix)) as Effect.Effect<A, E, never>)
+
+    // Both stores share one MemoryBlobStore but different prefixes; force flushes.
+    await runP(
+      Effect.gen(function* () {
+        const e = yield* Engine
+        for (let i = 1; i <= 6; i++)
+          yield* e.mutate([{ kind: "insert", table: "messages", row: { id: `p1-${i}`, channel: "a", seq: i, body: "one" } }])
+      }),
+      "tenant/1",
+    )
+    const t2 = await runP(
+      Effect.gen(function* () {
+        const e = yield* Engine
+        for (let i = 1; i <= 6; i++)
+          yield* e.mutate([{ kind: "insert", table: "messages", row: { id: `p2-${i}`, channel: "a", seq: i, body: "two" } }])
+        return yield* e.paginate(ascSpec, tailWindow(100))
+      }),
+      "tenant/2",
+    )
+    // Tenant 2 sees only its own rows — no overwrite/leak from tenant 1.
+    expect(t2.rows.every((r) => (r.body as string) === "two")).toBe(true)
+    expect(t2.rows.map((r) => r.id).sort()).toEqual(["p2-1", "p2-2", "p2-3", "p2-4", "p2-5", "p2-6"])
+  })
+})

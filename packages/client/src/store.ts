@@ -1,6 +1,6 @@
 import { type OrderKey, type Row, type Scalar, compareRows } from "@rabbat/protocol"
 
-export type SubStatus = "loading" | "ready"
+export type SubStatus = "loading" | "ready" | "error"
 
 export interface Snapshot<R extends Row = Row> {
   /** Rows in the subscription's sort order. */
@@ -11,6 +11,8 @@ export interface Snapshot<R extends Row = Row> {
   /** Whether more rows exist before / after the loaded window (both scroll dirs). */
   readonly hasOlder: boolean
   readonly hasNewer: boolean
+  /** Populated (with the server message) when `status === "error"`. */
+  readonly error?: string
 }
 
 const pkStr = (v: Scalar): string => `${typeof v}:${String(v)}`
@@ -31,6 +33,7 @@ export class SubscriptionStore<R extends Row = Row> {
   private total = 0
   private hasOlder = false
   private hasNewer = false
+  private errorMessage: string | undefined
   private snapshot: Snapshot<R> = { data: [], status: "loading", total: 0, hasOlder: false, hasNewer: false }
   private listeners = new Set<() => void>()
   /** Watermark (partition LSN) of the last applied delta — for SSR resume / cache. */
@@ -64,6 +67,7 @@ export class SubscriptionStore<R extends Row = Row> {
     this.total = meta.total
     this.hasOlder = meta.hasOlder
     this.hasNewer = meta.hasNewer
+    this.watermark = meta.watermark ?? this.watermark
     this.recompute()
   }
 
@@ -91,7 +95,15 @@ export class SubscriptionStore<R extends Row = Row> {
     this.hasOlder = meta.hasOlder
     this.hasNewer = meta.hasNewer
     this.status = "ready"
+    this.errorMessage = undefined
     this.watermark = meta.watermark ?? this.watermark
+    this.recompute()
+  }
+
+  /** Surface a subscription-scoped error frame; keeps the last rows visible. */
+  setError(message: string): void {
+    this.status = "error"
+    this.errorMessage = message
     this.recompute()
   }
 
@@ -99,6 +111,8 @@ export class SubscriptionStore<R extends Row = Row> {
     this.rows.clear()
     this.sorted = []
     this.status = "loading"
+    this.errorMessage = undefined
+    this.watermark = 0
     this.recompute()
   }
 
@@ -141,6 +155,7 @@ export class SubscriptionStore<R extends Row = Row> {
       total: this.total,
       hasOlder: this.hasOlder,
       hasNewer: this.hasNewer,
+      ...(this.status === "error" && this.errorMessage !== undefined ? { error: this.errorMessage } : {}),
     }
     for (const cb of this.listeners) cb()
   }
@@ -156,6 +171,8 @@ export interface Meta {
 export interface ValueSnapshot<T> {
   readonly data: T | undefined
   readonly status: SubStatus
+  /** Populated (with the server message) when `status === "error"`. */
+  readonly error?: string
 }
 
 /** The client-side mirror of a non-paginated (whole-value) reactive query. */
@@ -170,16 +187,29 @@ export class ValueStore<T = unknown> {
   }
   getSnapshot = (): ValueSnapshot<T> => this.snapshot
 
+  /** Whether live data has arrived (vs. still loading or only seeded). */
+  ready(): boolean {
+    return this.snapshot.status === "ready"
+  }
+
   set(value: T, watermark?: number): void {
     this.snapshot = { data: value, status: "ready" }
     if (watermark !== undefined) this.watermark = watermark
     this.emit()
   }
-  seed(value: T): void {
+  /** Seed from an SSR preload or IndexedDB cache (stays "loading" until live). */
+  seed(value: T, watermark?: number): void {
     this.snapshot = { data: value, status: "loading" }
+    if (watermark !== undefined) this.watermark = watermark
+    this.emit()
+  }
+  /** Surface a subscription-scoped error frame; keeps the last value visible. */
+  setError(message: string): void {
+    this.snapshot = { data: this.snapshot.data, status: "error", error: message }
     this.emit()
   }
   reset(): void {
+    this.watermark = 0
     this.snapshot = { data: this.snapshot.data, status: "loading" }
     this.emit()
   }

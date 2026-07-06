@@ -1,6 +1,7 @@
 import type { Filter, OrderKey, QuerySpec, Row, Scalar } from "@rabbat/protocol"
 import { compareScalar } from "@rabbat/protocol"
 import type { TableInfo } from "@rabbat/schema"
+import { QueryError } from "./errors.js"
 import { PRIMARY, keyspaceId } from "./lsm/types.js"
 
 export type { CompareOp, Filter, QuerySpec } from "@rabbat/protocol"
@@ -20,42 +21,91 @@ export function effectiveOrder(table: TableInfo, spec: QuerySpec): OrderKey[] {
   return order
 }
 
+/** Cap on a `like` pattern's length — long patterns enable ReDoS backtracking. */
+const MAX_LIKE_PATTERN = 256
+
 function likeToRegExp(pattern: string): RegExp {
+  if (pattern.length > MAX_LIKE_PATTERN) {
+    throw new QueryError({ message: `like pattern too long (max ${MAX_LIKE_PATTERN})` })
+  }
   let re = "^"
   for (const ch of pattern) {
-    if (ch === "%") re += ".*"
-    else if (ch === "_") re += "."
+    if (ch === "%") re += "[\\s\\S]*"
+    else if (ch === "_") re += "[\\s\\S]"
     else re += ch.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
   }
   return new RegExp(re + "$")
 }
 
-function matchesFilter(row: Row, f: Filter): boolean {
-  const v = row[f.column] ?? null
-  switch (f.op) {
-    case "=":
-      return compareScalar(v, f.value as Scalar) === 0
-    case "!=":
-      return compareScalar(v, f.value as Scalar) !== 0
-    case "<":
-      return compareScalar(v, f.value as Scalar) < 0
-    case "<=":
-      return compareScalar(v, f.value as Scalar) <= 0
-    case ">":
-      return compareScalar(v, f.value as Scalar) > 0
-    case ">=":
-      return compareScalar(v, f.value as Scalar) >= 0
-    case "like":
-      return typeof v === "string" && likeToRegExp(String(f.value)).test(v)
-    case "in":
-      return (f.value as ReadonlyArray<Scalar>).some((x) => compareScalar(v, x) === 0)
+const isScalar = (v: unknown): v is Scalar =>
+  v === null ||
+  typeof v === "string" ||
+  typeof v === "boolean" ||
+  (typeof v === "number" && Number.isFinite(v))
+
+/**
+ * Compile a filter list into a fast row predicate. `like` regexes are built
+ * once here (not per row — that was a ReDoS amplifier over a 100k-row scan), and
+ * every filter's value type is validated at the trust boundary. Throws
+ * `QueryError` on a malformed filter.
+ */
+export function compileMatcher(filters: ReadonlyArray<Filter>): (row: Row) => boolean {
+  const tests: Array<(row: Row) => boolean> = []
+  for (const f of filters) {
+    if (f.op === "in") {
+      if (!Array.isArray(f.value) || !f.value.every(isScalar)) {
+        throw new QueryError({ message: `filter ${f.column} in: expected an array of scalars` })
+      }
+      const set = f.value as ReadonlyArray<Scalar>
+      tests.push((row) => set.some((x) => compareScalar(row[f.column] ?? null, x) === 0))
+      continue
+    }
+    if (f.op === "like") {
+      if (typeof f.value !== "string") {
+        throw new QueryError({ message: `filter ${f.column} like: expected a string pattern` })
+      }
+      const re = likeToRegExp(f.value)
+      tests.push((row) => {
+        const v = row[f.column] ?? null
+        return typeof v === "string" && re.test(v)
+      })
+      continue
+    }
+    if (!isScalar(f.value)) {
+      throw new QueryError({ message: `filter ${f.column} ${f.op}: expected a scalar value` })
+    }
+    const val = f.value as Scalar
+    switch (f.op) {
+      case "=":
+        tests.push((row) => compareScalar(row[f.column] ?? null, val) === 0)
+        break
+      case "!=":
+        tests.push((row) => compareScalar(row[f.column] ?? null, val) !== 0)
+        break
+      case "<":
+        tests.push((row) => compareScalar(row[f.column] ?? null, val) < 0)
+        break
+      case "<=":
+        tests.push((row) => compareScalar(row[f.column] ?? null, val) <= 0)
+        break
+      case ">":
+        tests.push((row) => compareScalar(row[f.column] ?? null, val) > 0)
+        break
+      case ">=":
+        tests.push((row) => compareScalar(row[f.column] ?? null, val) >= 0)
+        break
+    }
+  }
+  return (row) => {
+    for (const t of tests) if (!t(row)) return false
+    return true
   }
 }
 
-/** Does a row satisfy every filter (AND semantics)? */
+/** Does a row satisfy every filter (AND semantics)? Compiles per call — prefer
+ * {@link compileMatcher} on a hot path. */
 export function matchesRow(row: Row, filters: ReadonlyArray<Filter>): boolean {
-  for (const f of filters) if (!matchesFilter(row, f)) return false
-  return true
+  return compileMatcher(filters)(row)
 }
 
 /**

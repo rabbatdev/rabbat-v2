@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useSyncExternalStore } from "react"
+import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from "react"
 import { aroundKey, tailWindow, type PaginationOpts, type Row, type Scalar } from "@rabbat/protocol"
 import type { ArgsOf, FunctionReference, PaginatedRow, ReturnOf } from "@rabbat/functions"
 import { useRabbat } from "./provider.js"
@@ -27,6 +27,37 @@ export function useQuery<Ref extends QueryRef<any, any>>(
   return useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot).data
 }
 
+export interface QueryResult<T> {
+  readonly data: T | undefined
+  readonly status: "loading" | "ready" | "error"
+  /** The server error message when `status === "error"`. */
+  readonly error?: string
+}
+
+/**
+ * Like {@link useQuery} but also surfaces load status and subscription errors.
+ * `useQuery` returns just the value; use this when you need to render an error or
+ * loading state for a whole-value query.
+ */
+export function useQueryWithStatus<Ref extends QueryRef<any, any>>(
+  ref: Ref,
+  args: ArgsOf<Ref>,
+): QueryResult<ReturnOf<Ref>> {
+  const client = useRabbat()
+  const argsKey = JSON.stringify(args)
+  const { store, key } = useMemo(
+    () => client.acquireValue<ReturnOf<Ref>>(ref.name, args as Record<string, unknown>),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [client, ref.name, argsKey],
+  )
+  useEffect(() => {
+    client.retain(key)
+    return () => client.release(key)
+  }, [client, key])
+  const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot)
+  return { data: snapshot.data, status: snapshot.status, error: snapshot.error }
+}
+
 export interface UsePaginatedQueryOptions {
   /** Initial window size and the increment used by loadOlder/loadNewer (default 30). */
   readonly initialNumItems?: number
@@ -37,7 +68,9 @@ export interface UsePaginatedQueryOptions {
 
 export interface PaginatedResult<R> {
   readonly data: ReadonlyArray<R>
-  readonly status: "loading" | "ready"
+  readonly status: "loading" | "ready" | "error"
+  /** The server error message when `status === "error"`. */
+  readonly error?: string
   readonly total: number
   readonly hasOlder: boolean
   readonly hasNewer: boolean
@@ -69,7 +102,7 @@ export function usePaginatedQuery<Ref extends QueryRef<any, any>>(
   const { store, key } = useMemo(
     () => client.acquirePaginated<Row>(ref.name, args as Record<string, unknown>, initialWindow),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [client, ref.name, argsKey, isAnchored, String(anchor)],
+    [client, ref.name, argsKey, isAnchored, String(anchor), initialNumItems],
   )
 
   useEffect(() => {
@@ -77,8 +110,16 @@ export function usePaginatedQuery<Ref extends QueryRef<any, any>>(
     return () => client.release(key)
   }, [client, key])
 
-  // Re-apply the window when the anchor changes (jump-to-item).
+  // The authoritative requested window. We grow `before` and `after` on this ref
+  // rather than reconstructing them from `data.length`, so the two directions
+  // grow independently and two quick loadOlder clicks (before any delta lands)
+  // enqueue two increments instead of one.
+  const windowRef = useRef<PaginationOpts>(initialWindow)
+
+  // Reset + re-apply the window when the subscription identity changes
+  // (jump-to-item anchor change, or a new page size).
   useEffect(() => {
+    windowRef.current = initialWindow
     client.setWindow(key, initialWindow)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [client, key, isAnchored, String(anchor), initialNumItems])
@@ -86,18 +127,21 @@ export function usePaginatedQuery<Ref extends QueryRef<any, any>>(
   const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot)
 
   const loadOlder = useCallback(() => {
-    const w = currentWindow(anchor, initialNumItems, snapshot.data.length)
-    client.setWindow(key, { ...w, before: w.before + initialNumItems })
-  }, [client, key, anchor, initialNumItems, snapshot.data.length])
+    const next: PaginationOpts = { ...windowRef.current, before: windowRef.current.before + initialNumItems }
+    windowRef.current = next
+    client.setWindow(key, next)
+  }, [client, key, initialNumItems])
 
   const loadNewer = useCallback(() => {
-    const w = currentWindow(anchor, initialNumItems, snapshot.data.length)
-    client.setWindow(key, { ...w, after: w.after + initialNumItems })
-  }, [client, key, anchor, initialNumItems, snapshot.data.length])
+    const next: PaginationOpts = { ...windowRef.current, after: windowRef.current.after + initialNumItems }
+    windowRef.current = next
+    client.setWindow(key, next)
+  }, [client, key, initialNumItems])
 
   return {
     data: snapshot.data as ReadonlyArray<PaginatedRow<Ref>>,
     status: snapshot.status,
+    error: snapshot.error,
     total: snapshot.total,
     hasOlder: snapshot.hasOlder,
     hasNewer: snapshot.hasNewer,
@@ -105,13 +149,6 @@ export function usePaginatedQuery<Ref extends QueryRef<any, any>>(
     loadNewer,
     isAnchored,
   }
-}
-
-function currentWindow(anchor: Scalar | null | undefined, n: number, loaded: number): PaginationOpts {
-  if (anchor !== null && anchor !== undefined) {
-    return { before: Math.max(n, loaded), after: Math.max(n, loaded), anchor: { kind: "key", key: anchor as Exclude<Scalar, null> } }
-  }
-  return { before: Math.max(n, loaded), after: 0, anchor: { kind: "latest" } }
 }
 
 export function useMutation<Ref extends FunctionReference<"mutation", any, any>>(

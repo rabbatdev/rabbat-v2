@@ -1,5 +1,5 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
-import { join } from "node:path"
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import { join, resolve } from "node:path"
 import { discover, generateApi, generateWorkerEntry, generateWrangler } from "@rabbat/vite/codegen"
 
 const COMPAT_DATE = "2025-10-01"
@@ -14,8 +14,24 @@ export function appName(root: string): string {
   return "rabbat-app"
 }
 
-/** Path to the deploy-ready wrangler config emitted by `vite build`. */
-export function distWranglerConfig(root: string): string {
+/**
+ * Absolute path to the deploy-ready wrangler config the Cloudflare Vite plugin
+ * emits under `dist/<worker-name>/wrangler.json`. Returns the first candidate
+ * that exists (the worker name defaults to the app name), or null if the build
+ * hasn't produced one — so `deploy` can fail with a clear message instead of
+ * handing wrangler a nonexistent `-c` path.
+ */
+export function distWranglerConfig(root: string): string | null {
+  const base = resolve(root, "dist")
+  const candidates = [
+    join(base, appName(root), "wrangler.json"),
+    join(base, appName(root), "wrangler.jsonc"),
+  ]
+  return candidates.find((p) => existsSync(p)) ?? null
+}
+
+/** Best-guess path (may not exist yet) for messaging when none is found. */
+export function expectedDistWranglerConfig(root: string): string {
   return join("dist", appName(root), "wrangler.json")
 }
 

@@ -11,17 +11,27 @@ import type { Entry } from "./types.js"
 export class Memtable {
   private readonly byKey = new Map<string, Entry>()
   private sorted: Entry[] = []
+  private bytes = 0
 
   get size(): number {
     return this.sorted.length
   }
 
+  /** Approximate in-memory size, used to flush by bytes rather than entry count. */
+  get byteSize(): number {
+    return this.bytes
+  }
+
   upsert(entry: Entry): void {
     const hex = keyHex(entry.key)
-    if (this.byKey.has(hex)) {
+    const cost = entryBytes(entry)
+    const existing = this.byKey.get(hex)
+    if (existing) {
+      this.bytes += cost - entryBytes(existing)
       const idx = this.indexOf(entry.key)
       if (idx >= 0) this.sorted[idx] = entry
     } else {
+      this.bytes += cost
       const idx = this.lowerBound(entry.key)
       this.sorted.splice(idx, 0, entry)
     }
@@ -63,6 +73,7 @@ export class Memtable {
   clear(): void {
     this.byKey.clear()
     this.sorted = []
+    this.bytes = 0
   }
 
   /** First index with key >= target. */
@@ -82,4 +93,16 @@ export class Memtable {
     if (idx < this.sorted.length && compareBytes(this.sorted[idx]!.key, target) === 0) return idx
     return -1
   }
+}
+
+/** Rough byte cost of an entry: key bytes + a shallow estimate of the row. */
+function entryBytes(entry: Entry): number {
+  let n = entry.key.length + 16
+  if (entry.row) {
+    for (const k in entry.row) {
+      const v = entry.row[k]
+      n += k.length + (typeof v === "string" ? v.length : 8) + 8
+    }
+  }
+  return n
 }

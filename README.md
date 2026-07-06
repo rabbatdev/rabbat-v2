@@ -121,12 +121,25 @@ wrangler config, and the typed `api` (all into `rabbat/_generated/`), and bundle
 it for Cloudflare. Schema sits at the backend root because every concern —
 functions today, crons and workflows next — builds on it.
 
+## Production configuration
+
+The defaults are safe for dev; a multi-tenant production deployment should set:
+
+| Knob | Where | Why |
+| --- | --- | --- |
+| `compileSchema(schema, { strictIndexes: true })` | worker entry | Reject unindexed (O(table)) queries instead of falling back to a capped scan. |
+| `defineWorker({ authenticate, partitionFor })` | worker | Resolve a **verified** identity at the edge and shard on it — never route on unauthenticated client `args` (that lets a tenant target another tenant's partition). |
+| `definePartition({ auth, flushBytes, maxMessageBytes })` | partition | Wire real token verification; tune the byte-based flush threshold and inbound message cap. |
+
+Built-in guardrails (always on): per-connection subscription cap, pagination window ceiling (`MAX_WINDOW_SIDE`), per-row/-batch size caps, cursor validation, `internal*` functions are never client-callable, mutations are acked only after they are durable, and a dropped delta drops the connection so the client resyncs.
+
 ## Quick start
 
 ```bash
 pnpm install
 pnpm build
-pnpm --filter @rabbat/engine test      # engine tests (cursors, pagination, IVM)
+pnpm --filter @rabbat/engine test      # engine tests (cursors, pagination, IVM, unique, isolation)
 pnpm --filter @rabbat/server test      # reactive stack (incremental deltas, routing)
+pnpm --filter @rabbat/client test      # client (reconnect, cache, stores)
 pnpm --filter chat dev                 # the example app on Miniflare → http://localhost:5173
 ```

@@ -67,7 +67,13 @@ export interface KeyspaceManifest {
  */
 export interface Manifest {
   readonly lsn: number
+  /**
+   * Monotonic segment-id counter, persisted with the manifest so segment ids
+   * can never collide across restarts (an in-memory counter would reset and
+   * overwrite live, referenced R2 objects).
+   */
+  readonly seq: number
   readonly keyspaces: Record<string, KeyspaceManifest>
 }
 
-export const emptyManifest = (): Manifest => ({ lsn: 0, keyspaces: {} })
+export const emptyManifest = (): Manifest => ({ lsn: 0, seq: 0, keyspaces: {} })

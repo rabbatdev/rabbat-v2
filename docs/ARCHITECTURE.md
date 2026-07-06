@@ -47,7 +47,9 @@ leading columns are equality-pinned and whose trailing columns are exactly the
 effective order — that query is served by an **index seek** (`O(log n + page)`,
 no scan + sort). The primary key is appended to the order so it is total, which is
 what makes cursors stable. Unindexed queries fall back to a filtered full scan + sort
-(fine for dev/small tables; a production deployment would reject them).
+(fine for dev/small tables); compiling the schema with `{ strictIndexes: true }` rejects
+them outright, and even in permissive mode a fallback scan that hits its cap fails loudly
+rather than silently truncating.
 
 ## Pagination: bi-directional windows + jump-to-item
 

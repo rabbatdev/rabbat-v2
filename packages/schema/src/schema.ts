@@ -69,11 +69,18 @@ export interface IndexConfig {
   readonly name: string
   /** Index key columns; the primary key is appended automatically as a tiebreaker. */
   readonly columns: ReadonlyArray<string>
+  /** Enforce uniqueness over the key columns (composite unique constraint). */
+  readonly unique: boolean
 }
 
 export type IndexSpec<C extends Columns> =
   | ReadonlyArray<keyof C & string>
-  | { readonly name: string; readonly columns: ReadonlyArray<keyof C & string> }
+  | {
+      readonly name: string
+      readonly columns: ReadonlyArray<keyof C & string>
+      /** Enforce a (composite) unique constraint over `columns`. */
+      readonly unique?: boolean
+    }
 
 export interface TableOptions<C extends Columns> {
   readonly indexes?: ReadonlyArray<IndexSpec<C>>
@@ -90,19 +97,27 @@ export function defineTable<C extends Columns>(
 ): TableDefinition<C> {
   const explicit: IndexConfig[] = (options.indexes ?? []).map((spec) => {
     if (Array.isArray(spec)) {
-      return { name: spec.join("_"), columns: spec as ReadonlyArray<string> }
+      return { name: spec.join("_"), columns: spec as ReadonlyArray<string>, unique: false }
     }
-    const o = spec as { name: string; columns: ReadonlyArray<string> }
-    return { name: o.name, columns: o.columns }
+    const o = spec as { name: string; columns: ReadonlyArray<string>; unique?: boolean }
+    return { name: o.name, columns: o.columns, unique: o.unique ?? false }
   })
   // Single-column indexes declared via `.index()` / `.unique()` on a column.
   const single: IndexConfig[] = []
   for (const [name, c] of Object.entries(columns)) {
     if (c.config.indexed && !explicit.some((i) => i.columns.length === 1 && i.columns[0] === name)) {
-      single.push({ name, columns: [name] })
+      single.push({ name, columns: [name], unique: c.config.unique })
     }
   }
-  return { columns, indexes: [...single, ...explicit] }
+  const all = [...single, ...explicit]
+  // Index names map 1:1 to keyspaces; a duplicate would silently merge two
+  // different indexes' data into one keyspace. Reject at definition time.
+  const seen = new Set<string>()
+  for (const idx of all) {
+    if (seen.has(idx.name)) throw new Error(`duplicate index name "${idx.name}"`)
+    seen.add(idx.name)
+  }
+  return { columns, indexes: all }
 }
 
 export type SchemaDefinition = Record<string, TableDefinition<Columns>>

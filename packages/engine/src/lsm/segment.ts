@@ -1,7 +1,7 @@
 import { Effect } from "effect"
 import type { Scalar } from "@rabbat/protocol"
 import { BlobStore } from "../blobstore.js"
-import type { StorageError } from "../errors.js"
+import { StorageError } from "../errors.js"
 import { compareBytes, keyHex } from "../keys.js"
 import type { BlockRef, Entry, SegmentFooter, SegmentRef } from "./types.js"
 
@@ -99,7 +99,14 @@ export const readFooter = (
       offset: seg.footerOffset,
       length: seg.footerLength,
     })
-    const footer = JSON.parse(decoder.decode(bytes ?? new Uint8Array())) as SegmentFooter
+    if (!bytes) {
+      // A referenced segment object is missing — never treat as empty (that
+      // would silently drop data); surface it so the caller can recover.
+      return yield* Effect.fail(
+        new StorageError({ message: `segment object missing: ${storeKeyPrefix}/${seg.id}` }),
+      )
+    }
+    const footer = JSON.parse(decoder.decode(bytes)) as SegmentFooter
     footerCache.set(seg.id, footer)
     return footer
   })
@@ -120,7 +127,12 @@ const loadBlock = (
       offset: blk.offset,
       length: blk.length,
     })
-    const entries = decodeBlock(bytes ?? new Uint8Array())
+    if (!bytes) {
+      return yield* Effect.fail(
+        new StorageError({ message: `segment block missing: ${storeKeyPrefix}/${seg.id}#${i}` }),
+      )
+    }
+    const entries = decodeBlock(bytes)
     blockCache.set(cacheKey, entries)
     return entries
   })

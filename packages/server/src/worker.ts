@@ -1,15 +1,39 @@
 /// <reference lib="dom" />
+import type { Identity } from "@rabbat/functions"
 import type { Modules } from "./runtime.js"
+
+/** What the router knows about a request when choosing a partition. */
+export interface RouteInfo {
+  readonly name?: string
+  readonly args?: Record<string, unknown>
+  /** The verified identity, when `authenticate` is configured. */
+  readonly identity?: Identity | null
+  /** The `?partition=` hint from the client (WebSocket + HTTP). */
+  readonly partition?: string | null
+}
 
 export interface WorkerConfig {
   /** DO namespace binding name (default "RABBAT_PARTITION"). */
   readonly partitionBinding?: string
   /**
    * Map a request to a partition id. Default: a single "main" partition. Shard
-   * by returning different ids (e.g. per channel) to scale horizontally across
-   * many Durable Objects.
+   * by returning different ids to scale horizontally across many Durable Objects.
+   *
+   * SECURITY: when sharding per tenant, derive the id from `info.identity`
+   * (verified — requires `authenticate`), NOT from `info.args`, which is
+   * unauthenticated client input. Routing on client args lets a caller target
+   * another tenant's partition.
    */
-  readonly partitionFor?: (req: { name?: string; args?: Record<string, unknown> }) => string
+  readonly partitionFor?: (info: RouteInfo) => string
+  /**
+   * Optionally resolve a verified identity at the edge (e.g. verify a JWT) so
+   * `partitionFor` can shard on it. Runs on the Worker for every routed request.
+   */
+  readonly authenticate?: (request: Request) => Identity | null | Promise<Identity | null>
+  /** Max request/cache body size in bytes (default 1 MiB). */
+  readonly maxBodyBytes?: number
+  /** How long a cached query body may be served on a 304 revalidation (default 1h). */
+  readonly cacheTtlSeconds?: number
   /** Modules, only used to expose names for diagnostics. */
   readonly modules?: Modules
 }
@@ -19,6 +43,7 @@ interface WorkerEnv {
 }
 
 const enc = new TextEncoder()
+const DEFAULT_MAX_BODY = 1 << 20
 
 async function hash(s: string): Promise<string> {
   const buf = await crypto.subtle.digest("SHA-256", enc.encode(s))
@@ -35,29 +60,47 @@ async function hash(s: string): Promise<string> {
 export function defineWorker(config: WorkerConfig = {}): ExportedHandler<WorkerEnv> {
   const partitionBinding = config.partitionBinding ?? "RABBAT_PARTITION"
   const partitionFor = config.partitionFor ?? (() => "main")
+  const maxBody = config.maxBodyBytes ?? DEFAULT_MAX_BODY
+  const cacheTtl = config.cacheTtlSeconds ?? 3600
 
   const stubFor = (env: WorkerEnv, id: string): DurableObjectStub => {
     const ns = env[partitionBinding] as DurableObjectNamespace
     return ns.get(ns.idFromName(id))
   }
 
+  const identityOf = (request: Request): Promise<Identity | null> =>
+    config.authenticate ? Promise.resolve(config.authenticate(request)).catch(() => null) : Promise.resolve(null)
+
   return {
     async fetch(request: Request, env: WorkerEnv): Promise<Response> {
       const url = new URL(request.url)
+      const partitionHint = url.searchParams.get("partition")
 
-      // Live sync: forward the WebSocket upgrade straight to the partition DO.
+      // Live sync: the partition is chosen per-connection from the (verified)
+      // identity and/or the client's `?partition=` hint — NOT ignored as before,
+      // which pinned every socket to one DO and broke sharding.
       if (request.headers.get("Upgrade") === "websocket") {
-        return stubFor(env, partitionFor({})).fetch(request)
+        const identity = await identityOf(request)
+        const id = partitionFor({ identity, partition: partitionHint })
+        return stubFor(env, id).fetch(request)
       }
 
       if (url.pathname === "/api/query" && request.method === "POST") {
-        return handleQuery(request, env, stubFor, partitionFor)
+        return handleQuery(request, env, stubFor, partitionFor, identityOf, maxBody, cacheTtl)
       }
 
       if (url.pathname === "/api/mutate" && request.method === "POST") {
         const body = await request.text()
-        const parsed = JSON.parse(body) as { name?: string; args?: Record<string, unknown> }
-        return stubFor(env, partitionFor(parsed)).fetch(
+        if (body.length > maxBody) return new Response("payload too large", { status: 413 })
+        let parsed: { name?: string; args?: Record<string, unknown> }
+        try {
+          parsed = JSON.parse(body)
+        } catch {
+          return new Response(JSON.stringify({ error: "invalid JSON" }), { status: 400, headers: { "Content-Type": "application/json" } })
+        }
+        const identity = await identityOf(request)
+        const id = partitionFor({ name: parsed.name, args: parsed.args, identity, partition: partitionHint })
+        return stubFor(env, id).fetch(
           new Request("https://do/mutate", { method: "POST", body, headers: request.headers }),
         )
       }
@@ -71,13 +114,27 @@ async function handleQuery(
   request: Request,
   env: WorkerEnv,
   stubFor: (env: WorkerEnv, id: string) => DurableObjectStub,
-  partitionFor: (req: { name?: string; args?: Record<string, unknown> }) => string,
+  partitionFor: (info: RouteInfo) => string,
+  identityOf: (request: Request) => Promise<Identity | null>,
+  maxBody: number,
+  cacheTtl: number,
 ): Promise<Response> {
   const body = await request.text()
-  const parsed = JSON.parse(body) as { name?: string; args?: Record<string, unknown>; token?: string | null }
+  if (body.length > maxBody) return new Response("payload too large", { status: 413 })
+  let parsed: { name?: string; args?: Record<string, unknown>; token?: string | null }
+  try {
+    parsed = JSON.parse(body)
+  } catch {
+    return new Response(JSON.stringify({ error: "invalid JSON" }), { status: 400, headers: { "Content-Type": "application/json" } })
+  }
+  const partitionHint = new URL(request.url).searchParams.get("partition")
+  const identity = await identityOf(request)
+  const id = partitionFor({ name: parsed.name, args: parsed.args, identity, partition: partitionHint })
+
   const cache = (caches as unknown as { default: Cache }).default
-  // Namespace the cache key by identity so private results are not shared.
-  const cacheKey = new Request(`https://rabbat.cache/q/${await hash(body + "|" + (parsed.token ?? ""))}`)
+  // Namespace the cache key by partition + identity/token so private results are
+  // never shared across partitions or identities.
+  const cacheKey = new Request(`https://rabbat.cache/q/${await hash(id + "|" + body + "|" + (parsed.token ?? ""))}`)
   const cached = await cache.match(cacheKey)
 
   const headers = new Headers({ "Content-Type": "application/json" })
@@ -86,7 +143,7 @@ async function handleQuery(
     if (w) headers.set("If-Rabbat-Watermark", w)
   }
 
-  const stub = stubFor(env, partitionFor(parsed))
+  const stub = stubFor(env, id)
   const res = await stub.fetch(new Request("https://do/query", { method: "POST", body, headers }))
 
   if (res.status === 304 && cached) {
@@ -96,17 +153,21 @@ async function handleQuery(
     })
   }
 
-  // Fresh result: cache it (keyed by args+identity, validated by watermark).
   const text = await res.text()
-  const toCache = new Response(text, {
-    headers: {
-      "Content-Type": "application/json",
-      "Rabbat-Watermark": res.headers.get("Rabbat-Watermark") ?? "",
-      "Cache-Control": "private, max-age=31536000",
-    },
-  })
-  await cache.put(cacheKey, toCache.clone())
+  // Only cache successful, watermarked responses (never a 4xx/5xx error body).
+  const watermark = res.headers.get("Rabbat-Watermark") ?? ""
+  if (res.ok && watermark) {
+    const toCache = new Response(text, {
+      headers: {
+        "Content-Type": "application/json",
+        "Rabbat-Watermark": watermark,
+        "Cache-Control": `private, max-age=${cacheTtl}`,
+      },
+    })
+    await cache.put(cacheKey, toCache.clone())
+  }
   return new Response(text, {
-    headers: { "Content-Type": "application/json", "Rabbat-Watermark": res.headers.get("Rabbat-Watermark") ?? "" },
+    status: res.status,
+    headers: { "Content-Type": "application/json", "Rabbat-Watermark": watermark },
   })
 }

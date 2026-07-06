@@ -29,6 +29,13 @@ export function useRabbat(): FunctionsClient {
 export function useConnectionStatus(): ConnectionStatus {
   const client = useRabbat()
   const [status, setStatus] = useState<ConnectionStatus>(() => client.getStatus())
-  useEffect(() => client.onStatusChange(setStatus), [client])
+  useEffect(() => {
+    const unsubscribe = client.onStatusChange(setStatus)
+    // Re-sync inside the effect: the status may have changed between the initial
+    // render (useState initializer) and this subscription (e.g. connect() firing
+    // in the provider effect), and that transition would otherwise be missed.
+    setStatus(client.getStatus())
+    return unsubscribe
+  }, [client])
   return status
 }

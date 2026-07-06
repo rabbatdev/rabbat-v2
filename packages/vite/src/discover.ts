@@ -84,10 +84,38 @@ export function discover(root: string, dir?: string): Discovery {
   }
 }
 
-/** Export names declared with `export const NAME` in a source file. */
+/**
+ * The public, client-callable functions exported by a module — the entries that
+ * belong in the generated `api` tree.
+ *
+ * Only exports whose initializer is a call to a public builder (`query`,
+ * `mutation`, `action`, or a `custom*` wrapper) are included; plain constants
+ * (`export const LIMIT = 10`) and server-only `internal*` functions are
+ * excluded, so the api tree never contains a `never`-typed node or exposes an
+ * internal function to the browser. Handles `export function`, `export { a }`
+ * re-exports, and multi-declarator `export const a = …, b = …`.
+ */
 export function scanExports(file: string): string[] {
-  const src = readFileSync(file, "utf8")
+  const src = stripComments(readFileSync(file, "utf8"))
   const names = new Set<string>()
-  for (const m of src.matchAll(/^\s*export\s+const\s+([A-Za-z_$][\w$]*)/gm)) names.add(m[1]!)
+  const isPublicBuilder = (callee: string): boolean =>
+    callee === "query" ||
+    callee === "mutation" ||
+    callee === "action" ||
+    (/^custom[A-Z]/.test(callee) && !/^internal/i.test(callee))
+
+  // Match `export const NAME = builder(` and comma-continued declarators
+  // (`, NAME = builder(`). No dependency on semicolons (the codebase omits
+  // them). The public-builder filter keeps false positives from the comma branch
+  // negligible.
+  const re = /(?:export\s+const|,)\s*([A-Za-z_$][\w$]*)\s*=\s*([A-Za-z_$][\w$]*)\s*\(/g
+  for (const m of src.matchAll(re)) {
+    if (isPublicBuilder(m[2]!)) names.add(m[1]!)
+  }
   return [...names]
+}
+
+/** Remove line and block comments so commented-out code is never scanned. */
+function stripComments(src: string): string {
+  return src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "")
 }

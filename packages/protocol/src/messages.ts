@@ -26,6 +26,13 @@ export const ClientMessage = Schema.Union([
     name: Schema.String,
     args: Args,
     pagination: Schema.optional(PaginationOpts),
+    /**
+     * The commit watermark of a snapshot the client already holds (SSR preload
+     * or a pre-reconnect window). When the server can prove nothing changed
+     * since (`watermark === current LSN`), it skips re-sending the full window
+     * and resumes with diffs only.
+     */
+    watermark: Schema.optional(Schema.Number),
   }),
   Schema.Struct({
     type: Schema.Literal("setPagination"),
@@ -86,6 +93,13 @@ export type ServerMessage =
       readonly hasNewer: boolean
       readonly total: number
       readonly watermark: number
+      /**
+       * When true the client must REPLACE its window with `upserts` (a fresh
+       * full send); when false/absent it MERGES the diff into what it holds. The
+       * server sets this explicitly so the client never has to guess from
+       * ordering — a watermark resume sends `reset: false` with empty upserts.
+       */
+      readonly reset?: boolean
     }
   | { readonly type: "mutationResult"; readonly id: number; readonly value: unknown }
   | { readonly type: "actionResult"; readonly id: number; readonly value: unknown }

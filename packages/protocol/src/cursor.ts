@@ -36,10 +36,47 @@ export function encodeCursor(cursor: Cursor): string {
   return toBase64Url(encoder.encode(JSON.stringify(cursor.key)))
 }
 
-export function decodeCursor(s: string): Cursor {
-  const key = JSON.parse(decoder.decode(fromBase64Url(s))) as Scalar[]
-  if (!Array.isArray(key)) throw new Error(`bad cursor: ${s}`)
-  return { key }
+/** Bounds on client-supplied cursors: they cross the trust boundary. */
+const MAX_CURSOR_CHARS = 8192
+const MAX_CURSOR_ELEMENTS = 32
+
+const isScalar = (v: unknown): v is Scalar =>
+  v === null ||
+  typeof v === "string" ||
+  typeof v === "boolean" ||
+  (typeof v === "number" && Number.isFinite(v))
+
+/** Thrown for any malformed/forged cursor — safe to surface to the client. */
+export class CursorError extends Error {
+  override readonly name = "CursorError"
+}
+
+/**
+ * Decode and validate an untrusted cursor. Every element must be a finite
+ * scalar (string/finite number/boolean/null) — anything else (objects, arrays,
+ * `undefined`, non-finite numbers) would corrupt the key encoding downstream.
+ * When `arity` is given, the key must have exactly that many elements (the
+ * query's effective order length), so a cursor cannot be transplanted between
+ * queries of different shape or seek with a truncated/extended key.
+ */
+export function decodeCursor(s: string, arity?: number): Cursor {
+  if (typeof s !== "string" || s.length === 0 || s.length > MAX_CURSOR_CHARS) {
+    throw new CursorError("bad cursor: invalid length")
+  }
+  let key: unknown
+  try {
+    key = JSON.parse(decoder.decode(fromBase64Url(s)))
+  } catch {
+    throw new CursorError("bad cursor: not decodable")
+  }
+  if (!Array.isArray(key) || key.length === 0 || key.length > MAX_CURSOR_ELEMENTS) {
+    throw new CursorError("bad cursor: not a key tuple")
+  }
+  if (!key.every(isScalar)) throw new CursorError("bad cursor: non-scalar element")
+  if (arity !== undefined && key.length !== arity) {
+    throw new CursorError(`bad cursor: expected ${arity} element(s), got ${key.length}`)
+  }
+  return { key: key as Scalar[] }
 }
 
 /** Build the cursor for a row under an effective order. */

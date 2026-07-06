@@ -34,6 +34,13 @@ export function compareScalar(a: Scalar, b: Scalar): number {
     return a === b ? 0 : a ? 1 : -1
   }
   if (typeof a === "number" && typeof b === "number") {
+    // Total order even for non-finite values (the engine rejects them at
+    // insert, but the comparator must never be partial: NaN comparing "equal"
+    // to everything would corrupt binary-search inserts in live windows).
+    // NaN sorts last among numbers; -0 === 0 is fine (byte encoding agrees).
+    const na = Number.isNaN(a)
+    const nb = Number.isNaN(b)
+    if (na || nb) return na && nb ? 0 : na ? 1 : -1
     return a < b ? -1 : a > b ? 1 : 0
   }
   // strings

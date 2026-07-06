@@ -1,4 +1,4 @@
-import type { Anchor, PaginationOpts } from "@rabbat/protocol"
+import { MAX_WINDOW_SIDE, type Anchor, type PaginationOpts } from "@rabbat/protocol"
 
 /**
  * Runtime argument validators. Args are validated at runtime (`v.string()`, …)
@@ -129,9 +129,14 @@ export const paginationOpts: Validator<PaginationOpts, false> = make<PaginationO
   (val, path) => {
     if (!isPlainObject(val)) throw new ValidationError(`${path}: expected pagination opts`)
     const { before, after, anchor } = val
-    if (typeof before !== "number" || typeof after !== "number")
-      throw new ValidationError(`${path}: before/after must be numbers`)
+    // Window sides are untrusted client input; an unbounded (or negative,
+    // fractional, non-finite) count would drive engine allocations directly.
+    const side = (v: unknown, name: string): number => {
+      if (typeof v !== "number" || !Number.isInteger(v) || v < 0 || v > MAX_WINDOW_SIDE)
+        throw new ValidationError(`${path}.${name}: expected an integer in [0, ${MAX_WINDOW_SIDE}]`)
+      return v
+    }
     if (!isAnchor(anchor)) throw new ValidationError(`${path}: invalid anchor`)
-    return { before, after, anchor }
+    return { before: side(before, "before"), after: side(after, "after"), anchor }
   },
 )

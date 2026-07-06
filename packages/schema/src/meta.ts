@@ -22,16 +22,27 @@ export interface TableInfo {
   readonly pk: string
   readonly columns: ReadonlyArray<ColumnInfo>
   readonly indexes: ReadonlyArray<IndexInfo>
+  /**
+   * When true, a query that no index can serve is rejected instead of falling
+   * back to an O(table) scan. Set for production deployments.
+   */
+  readonly strictIndexes: boolean
 }
 
 export interface SchemaInfo {
   readonly tables: ReadonlyArray<TableInfo>
 }
 
+export interface CompileOptions {
+  /** Reject unindexed paginated/collect queries (recommended in production). */
+  readonly strictIndexes?: boolean
+}
+
 /** Reserved system table for durable scheduled jobs (Convex-style). */
 export const SCHEDULED_TABLE = "_scheduled"
 
-export function compileSchema(schema: SchemaDefinition): SchemaInfo {
+export function compileSchema(schema: SchemaDefinition, options: CompileOptions = {}): SchemaInfo {
+  const strictIndexes = options.strictIndexes ?? false
   const tables: TableInfo[] = []
   for (const [name, def] of Object.entries(schema)) {
     let pk: string | undefined
@@ -48,9 +59,11 @@ export function compileSchema(schema: SchemaDefinition): SchemaInfo {
       name: idx.name,
       // Append the pk as a tiebreaker so every index produces a total order.
       columns: idx.columns.includes(primaryKey) ? idx.columns : [...idx.columns, primaryKey],
-      unique: idx.columns.length === 1 && uniqueCols.has(idx.columns[0]!),
+      // Unique if the index declares it (composite unique), or it is a
+      // single-column index over a column marked `.unique()`.
+      unique: idx.unique || (idx.columns.length === 1 && uniqueCols.has(idx.columns[0]!)),
     }))
-    tables.push({ name, pk: primaryKey, columns, indexes })
+    tables.push({ name, pk: primaryKey, columns, indexes, strictIndexes })
   }
   return { tables }
 }

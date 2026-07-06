@@ -154,13 +154,15 @@ const makeCustom =
     args: V
     handler: (ctx: BaseCtx & ExtraCtx, args: ObjectType<V> & AddArgs) => R | Promise<R>
     middleware?: ReadonlyArray<Middleware<BaseCtx>>
+    /** Mark the resulting custom function server-only (not client-callable). */
+    internal?: boolean
   }): Registered<typeof kind, ObjectType<ModArgs> & ObjectType<V>, Awaited<R>> => {
     const mergedArgs = { ...(customizer.args ?? {}), ...def.args } as PropValidators
     return {
       __kind: kind,
       argsValidator: mergedArgs,
       middleware: def.middleware ?? [],
-      internal: false,
+      internal: def.internal ?? false,
       handler: async (ctx: BaseCtx, args: Record<string, unknown>): Promise<Awaited<R>> => {
         const out = await customizer.input(ctx, args as ObjectType<ModArgs>)
         const merged = { ...ctx, ...out.ctx } as BaseCtx & ExtraCtx
