@@ -1,7 +1,7 @@
 import "@/styles.css";
 
 import { useEffect, type ReactNode } from "react";
-import { useKeepAlive, useMutation, usePage, useQuery, useRabbat } from "@rabbat/react";
+import { RabbatProvider, useKeepAlive, useMutation, usePage, useQuery, useRabbat } from "@rabbat/react";
 import { Loader2 } from "lucide-react";
 
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -88,7 +88,21 @@ function useServiceWorker() {
   }, []);
 }
 
+/**
+ * The root layout. It OWNS the reactive client via <RabbatProvider> (the
+ * generated entry only mounts the router), so every hook below — and in every
+ * page — runs inside the provider. The signed-in shell lives in <AppShell>,
+ * which must therefore render as a child of the provider.
+ */
 export default function Layout({ children }: { children: ReactNode }) {
+  return (
+    <RabbatProvider>
+      <AppShell>{children}</AppShell>
+    </RabbatProvider>
+  );
+}
+
+function AppShell({ children }: { children: ReactNode }) {
   useAppHeight();
   useServiceWorker();
   const { data: session, isPending } = authClient.useSession();
