@@ -9,8 +9,9 @@
 // (Route-aware OG meta now lives in each page's `meta` export — e.g.
 // pages/invite/[code].server.ts — not here.)
 
-import { serverDb } from "rabbat/functions";
+import { serverDb, configureServerDb } from "rabbat/functions";
 import type { Identity } from "rabbat/functions";
+import type { DurableNamespaceLike } from "@rabbat/db";
 import { createRouteHandler } from "uploadthing/server";
 
 import { createAuth } from "./auth.ts";
@@ -65,5 +66,27 @@ export function resolveIdentity(
   if (token) headers.set("authorization", `Bearer ${token}`);
   else if (typeof cookie === "string") headers.set("cookie", cookie);
   else return Promise.resolve(null);
+  return sessionIdentity(headers);
+}
+
+/**
+ * Edge identity resolver (`defineWorker`'s `authenticate`) — runs in the Worker,
+ * where the partition DO binding works, so Better Auth's DB adapter can read the
+ * session. The Worker forwards the result to the partition, avoiding a DO self-
+ * call. Reads the bearer token from the WS `?token=` (or an Authorization header)
+ * or the session cookie on the same-origin request.
+ */
+export async function edgeAuthenticate(
+  request: Request,
+  workerEnv: Record<string, unknown>,
+): Promise<Identity | null> {
+  // Point serverDb at the partition via the Worker's DO binding for this request.
+  configureServerDb({
+    namespace: workerEnv.RABBAT_PARTITION as DurableNamespaceLike,
+    serviceKey: env.SERVICE_KEY,
+  });
+  const headers = new Headers(request.headers);
+  const token = new URL(request.url).searchParams.get("token");
+  if (token) headers.set("authorization", `Bearer ${token}`);
   return sessionIdentity(headers);
 }

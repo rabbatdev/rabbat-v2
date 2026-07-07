@@ -204,11 +204,20 @@ export class FunctionsClient {
       rec.store.reset()
       rec.firstDelta = true
     }
-    if (this.status !== "open") return
-    this.send({ type: "setAuth", token })
-    for (const rec of this.subs.values()) {
-      if (rec.refcount > 0) this.sendSubscribe(rec)
+    // The identity is carried in the connection URL (`?token=`) and resolved at
+    // the edge on connect, so an identity change requires a fresh connection —
+    // reconnect with the new token rather than sending an in-band setAuth. (An
+    // in-band setAuth can't re-run edge auth.)
+    if (this.ws) {
+      const ws = this.ws
+      this.ws = null
+      try {
+        ws.close()
+      } catch {
+        /* already closing */
+      }
     }
+    if (!this.closed) this.connect()
   }
 
   private onClose(ws: WebSocket): void {

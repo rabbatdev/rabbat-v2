@@ -56,7 +56,26 @@ interface SubDescriptor {
 interface SocketAttachment {
   conn: string
   token: string | null
+  /**
+   * Edge-resolved identity forwarded by the Worker (trusted). `undefined` means
+   * the Worker did not do edge auth, so the DO resolves from `token` itself.
+   */
+  identity?: Identity | null
   subs: SubDescriptor[]
+}
+
+/** The header the Worker uses to forward the edge-resolved identity (trusted). */
+const INTERNAL_IDENTITY_HEADER = "X-Rabbat-Identity"
+
+/** Read the Worker-forwarded identity; `undefined` = not edge-authenticated. */
+function forwardedIdentity(request: Request): Identity | null | undefined {
+  const h = request.headers.get(INTERNAL_IDENTITY_HEADER)
+  if (h === null) return undefined
+  try {
+    return JSON.parse(h) as Identity | null
+  } catch {
+    return undefined
+  }
 }
 
 /**
@@ -210,7 +229,8 @@ export function definePartition(config: PartitionConfig): {
       if (typeof body.name !== "string" || (body.kind !== "query" && body.kind !== "mutation" && body.kind !== "action")) {
         return json({ error: "invalid call" }, {}, 400)
       }
-      const identity = await this.identityFor(typeof body.token === "string" ? body.token : null)
+      const fwd = forwardedIdentity(request)
+      const identity = fwd !== undefined ? fwd : await this.identityFor(typeof body.token === "string" ? body.token : null)
       const args = (body.args as Record<string, unknown>) ?? {}
       try {
         if (body.kind === "query") {
@@ -236,7 +256,9 @@ export function definePartition(config: PartitionConfig): {
       const server = pair[1]
       const conn = crypto.randomUUID()
       const token = url.searchParams.get("token")
-      const attachment: SocketAttachment = { conn, token, subs: [] }
+      // Trust the Worker's edge-resolved identity when present (it authenticated
+      // where DB bindings work); otherwise the DO resolves from the token.
+      const attachment: SocketAttachment = { conn, token, identity: forwardedIdentity(request), subs: [] }
       // Hibernatable accept: the runtime persists the socket across eviction.
       this.ctx.acceptWebSocket(server)
       server.serializeAttachment(attachment)
@@ -263,15 +285,18 @@ export function definePartition(config: PartitionConfig): {
         send(ws, { type: "error", message: `bad message: ${String(e)}` })
         return
       }
-      // Identity is resolved synchronously from the socket's token before any
-      // message is processed — no fire-and-forget race, no anonymous window.
-      const identity = await this.identityFor(att.token)
+      // Prefer the Worker's edge-resolved identity (trusted); otherwise resolve
+      // synchronously from the socket's token. Either way it's ready before any
+      // message runs — no fire-and-forget race, no anonymous window.
+      const identity = att.identity !== undefined ? att.identity : await this.identityFor(att.token)
       try {
         switch (msg.type) {
           case "setAuth": {
             att.token = msg.token
             ws.serializeAttachment(att)
-            const id = await this.identityFor(msg.token)
+            // With edge auth, identity is fixed at connect (the client reconnects
+            // to change it), so keep it; otherwise re-resolve from the new token.
+            const id = att.identity !== undefined ? att.identity : await this.identityFor(msg.token)
             return this.dispatch(await this.hub.reauth(att.conn, id))
           }
           case "subscribe": {
@@ -386,7 +411,8 @@ export function definePartition(config: PartitionConfig): {
       const current = this.engine.lsn()
       // Resolve identity FIRST: a 304 must not hand back another (or a revoked)
       // identity's cached body, so we authenticate before the watermark shortcut.
-      const identity = await this.identityFor(typeof body.token === "string" ? body.token : null)
+      const fwd = forwardedIdentity(request)
+      const identity = fwd !== undefined ? fwd : await this.identityFor(typeof body.token === "string" ? body.token : null)
       if (ifWatermark !== null && Number.isFinite(Number(ifWatermark)) && Number(ifWatermark) === current) {
         return new Response(null, { status: 304, headers: { "Rabbat-Watermark": String(current) } })
       }
@@ -426,7 +452,8 @@ export function definePartition(config: PartitionConfig): {
         return json({ error: clientError(e) }, {}, 400)
       }
       if (typeof body.name !== "string") return json({ error: "missing function name" }, {}, 400)
-      const identity = await this.identityFor(typeof body.token === "string" ? body.token : null)
+      const fwd = forwardedIdentity(request)
+      const identity = fwd !== undefined ? fwd : await this.identityFor(typeof body.token === "string" ? body.token : null)
       try {
         const result = await this.serialize(() =>
           this.runtime.runMutation(body.name as string, (body.args as Record<string, unknown>) ?? {}, identity),

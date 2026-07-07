@@ -26,11 +26,13 @@ export interface Env {
   RESEND_API_KEY?: string;
   EMAIL_FROM: string;
   UPLOADTHING_TOKEN?: string;
+  RABBAT_SERVICE_KEY?: string;
   // Derived.
   PROD: boolean;
   DEV_EMAIL_AUTH: boolean;
   TRUSTED_ORIGINS: string[];
   GOOGLE_ENABLED: boolean;
+  SERVICE_KEY: string;
 }
 
 export const env: Env = defineEnv({
@@ -62,13 +64,20 @@ export const env: Env = defineEnv({
 
     // UploadThing — unset disables uploads.
     UPLOADTHING_TOKEN: z.string().optional(),
+
+    // Service key gating the partition's admin DB endpoint (serverDb). In
+    // workerd process.env is empty, so this defaults to a dev value used
+    // consistently by both the partition config and serverDb.
+    RABBAT_SERVICE_KEY: z.string().optional(),
   },
   // Derived keys use env-style names; ones matching a raw var (APP_ORIGIN,
   // AUTH_BASE_URL, PORT, DEV_EMAIL_AUTH, TRUSTED_ORIGINS) OVERRIDE it with the
   // resolved value, so consumers always read the final value off `env`.
   derive: (e) => {
     const PROD = e.NODE_ENV === "production";
-    const PORT = e.PORT ?? e.APP_PORT ?? 3650;
+    // rabbat-v2 runs the app on Vite's dev server (default 5173), not the
+    // original framework's 3650 host.
+    const PORT = e.PORT ?? e.APP_PORT ?? 5173;
     const APP_ORIGIN = (e.APP_ORIGIN ?? `http://localhost:${PORT}`).replace(/\/$/, "");
     const AUTH_BASE_URL = (e.AUTH_BASE_URL ?? APP_ORIGIN).replace(/\/$/, "");
     return {
@@ -79,12 +88,22 @@ export const env: Env = defineEnv({
       // Email+password (the dev "sign in as test user" button): on by default in
       // dev, off in prod unless DEV_EMAIL_AUTH=1.
       DEV_EMAIL_AUTH: PROD ? e.DEV_EMAIL_AUTH === "1" : e.DEV_EMAIL_AUTH !== "0",
-      // Prod: trust the configured origins; dev: also trust tailnet/LAN hosts on
-      // the app port (Better Auth supports `*` wildcards) so it's reachable there.
+      // Prod: trust the configured origins. Dev: trust localhost / 127.0.0.1 /
+      // LAN hosts on ANY port (Better Auth supports `*` wildcards), so it works
+      // regardless of which port Vite picks (5173, 5174, …) — otherwise Better
+      // Auth rejects the request with "Invalid origin".
       TRUSTED_ORIGINS: PROD
         ? (e.TRUSTED_ORIGINS ?? APP_ORIGIN).split(",").map((s) => s.trim().replace(/\/$/, "")).filter(Boolean)
-        : [APP_ORIGIN, `http://127.0.0.1:${PORT}`, `http://localhost:${PORT}`, `http://*:${PORT}`, `https://*:${PORT}`],
+        : [
+            APP_ORIGIN,
+            "http://localhost:*",
+            "http://127.0.0.1:*",
+            "http://*:*",
+            "https://*:*",
+          ],
       GOOGLE_ENABLED: Boolean(e.GOOGLE_CLIENT_ID && e.GOOGLE_CLIENT_SECRET),
+      // Same value on both sides of the admin endpoint (partition + serverDb).
+      SERVICE_KEY: e.RABBAT_SERVICE_KEY ?? "rabbat-dev-service-key",
     };
   },
 });

@@ -20,17 +20,22 @@
 import { defineConfig } from "rabbat/config";
 
 import { env } from "./rabbat/functions/env.ts";
-import { resolveIdentity } from "./rabbat/functions/server.ts";
+import { edgeAuthenticate, resolveIdentity } from "./rabbat/functions/server.ts";
 
 export default defineConfig({
   // Identified by RABBAT_TOKEN in .env (auto-created on first dev). In dev the
   // framework auto-starts an embedded Postgres + the shared backend; in prod set
   // RABBAT_PG_URL (external Postgres) and a stable RABBAT_TOKEN.
+  // The partition's fallback token resolver (used only if edge auth is off).
   auth: resolveIdentity,
+  // Edge identity resolution: runs in the Worker (DB bindings work there) and the
+  // result is forwarded to the partition — so the reactive connection is
+  // authenticated without the DO having to call the DB (a self-call it can't make).
+  authenticate: edgeAuthenticate,
   // Enable the privileged `@rabbat/db` admin endpoint that `serverDb()` (Better
-  // Auth's adapter + UploadThing auth) reaches over HTTP. The service key gates
-  // it; keep it server-side only (RABBAT_SERVICE_KEY in the environment).
-  serviceKey: process.env.RABBAT_SERVICE_KEY,
+  // Auth's adapter + UploadThing auth) reaches through the partition DO binding.
+  // The same key gates it on both sides (env.SERVICE_KEY, dev-defaulted).
+  serviceKey: env.SERVICE_KEY,
   dbAdmin: true,
   meta: {
     title: "en — chat in orbit",

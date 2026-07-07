@@ -27,8 +27,13 @@ export interface RabbatConfig {
   auth?: (token: string | null) => Identity | null | Promise<Identity | null>
   /** Shard requests across partitions (default single "main"). */
   partitionFor?: (info: { name?: string; args?: Record<string, unknown>; identity?: Identity | null; partition?: string | null }) => string
-  /** Verify an identity at the edge so `partitionFor` can shard on it. */
-  authenticate?: (request: Request) => Identity | null | Promise<Identity | null>
+  /**
+   * Resolve a verified identity at the edge (in the Worker, where DB bindings
+   * work). The result is forwarded to the partition, so the reactive connection
+   * is authenticated without the DO calling the DB. `env` carries the Worker
+   * bindings (e.g. the partition DO namespace).
+   */
+  authenticate?: (request: Request, env: Record<string, unknown>) => Identity | null | Promise<Identity | null>
   /** Service key enabling the privileged `@rabbat/db` admin endpoint. */
   serviceKey?: string
   /** Expose the admin DB endpoint over HTTP (server-to-server). */

@@ -8,14 +8,25 @@
 // register every method to the same handler.
 
 import { defineRoute } from "rabbat/server";
+import { configureServerDb } from "rabbat/functions";
+import type { DurableNamespaceLike } from "@rabbat/db";
 
 import { auth } from "../../functions/server.ts";
+import { env } from "../../functions/env.ts";
 
 export default defineRoute({
   path: "/api/auth/*",
   handlers: (route) => {
-    // One handler forwards the raw Request to Better Auth for every verb.
-    const handler = route.handler((ctx) => auth.handler(ctx.request));
+    // Publish the partition DO binding for serverDb (Better Auth's adapter)
+    // before handing off — in-edge binding calls avoid the workerd loopback
+    // limitation that breaks a Worker fetching its own origin.
+    const handler = route.handler((ctx) => {
+      configureServerDb({
+        namespace: ctx.env.RABBAT_PARTITION as DurableNamespaceLike,
+        serviceKey: env.SERVICE_KEY,
+      });
+      return auth.handler(ctx.request);
+    });
     return { GET: handler, POST: handler, PUT: handler, PATCH: handler, DELETE: handler };
   },
 });

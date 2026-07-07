@@ -28,10 +28,13 @@ export interface WorkerConfig {
    */
   readonly partitionFor?: (info: RouteInfo) => string
   /**
-   * Optionally resolve a verified identity at the edge (e.g. verify a JWT) so
-   * `partitionFor` can shard on it. Runs on the Worker for every routed request.
+   * Resolve a verified identity at the edge (e.g. verify a session/JWT). Runs on
+   * the Worker for every routed request — where DB bindings work — and the result
+   * is forwarded to the partition via a trusted internal header, so the DO never
+   * re-authenticates. `partitionFor` can also shard on it. `env` carries the
+   * Worker bindings (e.g. the partition DO namespace) for DB-backed session lookup.
    */
-  readonly authenticate?: (request: Request) => Identity | null | Promise<Identity | null>
+  readonly authenticate?: (request: Request, env: WorkerEnv) => Identity | null | Promise<Identity | null>
   /** Max request/cache body size in bytes (default 1 MiB). */
   readonly maxBodyBytes?: number
   /** How long a cached query body may be served on a 304 revalidation (default 1h). */
@@ -67,6 +70,33 @@ interface WorkerEnv {
 const enc = new TextEncoder()
 const DEFAULT_MAX_BODY = 1 << 20
 
+/**
+ * The trusted internal header carrying the edge-resolved identity from the Worker
+ * to its partition DO. The Worker is the only thing that can reach the DO, so the
+ * DO trusts this — but the Worker MUST strip any client-supplied value first
+ * (a client could otherwise inject an identity).
+ */
+export const INTERNAL_IDENTITY_HEADER = "X-Rabbat-Identity"
+
+/**
+ * Stamp the edge-resolved identity. When edge auth is in play (`edgeAuth`), the
+ * header is ALWAYS set — to the identity JSON, or literal `null` for an
+ * anonymous connection — so the partition trusts it and skips its own auth. Any
+ * client-supplied value is stripped first. When edge auth is off, the header is
+ * removed and the partition falls back to its `auth` (token) resolver.
+ */
+function setInternalIdentity(headers: Headers, identity: Identity | null, edgeAuth: boolean): void {
+  headers.delete(INTERNAL_IDENTITY_HEADER) // never trust a client-provided value
+  if (edgeAuth) headers.set(INTERNAL_IDENTITY_HEADER, JSON.stringify(identity))
+}
+
+/** Clone a request, replacing the trusted identity header with the resolved one. */
+function withInternalIdentity(request: Request, identity: Identity | null, edgeAuth: boolean): Request {
+  const headers = new Headers(request.headers)
+  setInternalIdentity(headers, identity, edgeAuth)
+  return new Request(request, { headers })
+}
+
 async function hash(s: string): Promise<string> {
   const buf = await crypto.subtle.digest("SHA-256", enc.encode(s))
   return [...new Uint8Array(buf)].slice(0, 12).map((b) => b.toString(16).padStart(2, "0")).join("")
@@ -84,14 +114,19 @@ export function defineWorker(config: WorkerConfig = {}): ExportedHandler<WorkerE
   const partitionFor = config.partitionFor ?? (() => "main")
   const maxBody = config.maxBodyBytes ?? DEFAULT_MAX_BODY
   const cacheTtl = config.cacheTtlSeconds ?? 3600
+  // When edge auth is configured, the Worker resolves identity and forwards it;
+  // the partition trusts that and skips its own token resolver.
+  const edgeAuth = Boolean(config.authenticate)
 
   const stubFor = (env: WorkerEnv, id: string): DurableObjectStub => {
     const ns = env[partitionBinding] as DurableObjectNamespace
     return ns.get(ns.idFromName(id))
   }
 
-  const identityOf = (request: Request): Promise<Identity | null> =>
-    config.authenticate ? Promise.resolve(config.authenticate(request)).catch(() => null) : Promise.resolve(null)
+  const identityOf = (request: Request, env: WorkerEnv): Promise<Identity | null> =>
+    config.authenticate
+      ? Promise.resolve(config.authenticate(request, env)).catch(() => null)
+      : Promise.resolve(null)
 
   return {
     async fetch(request: Request, env: WorkerEnv): Promise<Response> {
@@ -100,15 +135,18 @@ export function defineWorker(config: WorkerConfig = {}): ExportedHandler<WorkerE
 
       // Live sync: the partition is chosen per-connection from the (verified)
       // identity and/or the client's `?partition=` hint — NOT ignored as before,
-      // which pinned every socket to one DO and broke sharding.
+      // which pinned every socket to one DO and broke sharding. The identity is
+      // resolved HERE at the edge (where DB bindings work) and forwarded to the
+      // partition via a trusted internal header, so the DO never has to
+      // re-authenticate (a self-call it can't make).
       if (request.headers.get("Upgrade") === "websocket") {
-        const identity = await identityOf(request)
+        const identity = await identityOf(request, env)
         const id = partitionFor({ identity, partition: partitionHint })
-        return stubFor(env, id).fetch(request)
+        return stubFor(env, id).fetch(withInternalIdentity(request, identity, edgeAuth))
       }
 
       if (url.pathname === "/api/query" && request.method === "POST") {
-        return handleQuery(request, env, stubFor, partitionFor, identityOf, maxBody, cacheTtl)
+        return handleQuery(request, env, stubFor, partitionFor, identityOf, maxBody, cacheTtl, edgeAuth)
       }
 
       if (url.pathname === "/api/mutate" && request.method === "POST") {
@@ -120,10 +158,10 @@ export function defineWorker(config: WorkerConfig = {}): ExportedHandler<WorkerE
         } catch {
           return new Response(JSON.stringify({ error: "invalid JSON" }), { status: 400, headers: { "Content-Type": "application/json" } })
         }
-        const identity = await identityOf(request)
+        const identity = await identityOf(request, env)
         const id = partitionFor({ name: parsed.name, args: parsed.args, identity, partition: partitionHint })
         return stubFor(env, id).fetch(
-          new Request("https://do/mutate", { method: "POST", body, headers: request.headers }),
+          withInternalIdentity(new Request("https://do/mutate", { method: "POST", body, headers: request.headers }), identity, edgeAuth),
         )
       }
 
@@ -171,9 +209,10 @@ async function handleQuery(
   env: WorkerEnv,
   stubFor: (env: WorkerEnv, id: string) => DurableObjectStub,
   partitionFor: (info: RouteInfo) => string,
-  identityOf: (request: Request) => Promise<Identity | null>,
+  identityOf: (request: Request, env: WorkerEnv) => Promise<Identity | null>,
   maxBody: number,
   cacheTtl: number,
+  edgeAuth: boolean,
 ): Promise<Response> {
   const body = await request.text()
   if (body.length > maxBody) return new Response("payload too large", { status: 413 })
@@ -184,16 +223,19 @@ async function handleQuery(
     return new Response(JSON.stringify({ error: "invalid JSON" }), { status: 400, headers: { "Content-Type": "application/json" } })
   }
   const partitionHint = new URL(request.url).searchParams.get("partition")
-  const identity = await identityOf(request)
+  const identity = await identityOf(request, env)
   const id = partitionFor({ name: parsed.name, args: parsed.args, identity, partition: partitionHint })
 
   const cache = (caches as unknown as { default: Cache }).default
-  // Namespace the cache key by partition + identity/token so private results are
-  // never shared across partitions or identities.
-  const cacheKey = new Request(`https://rabbat.cache/q/${await hash(id + "|" + body + "|" + (parsed.token ?? ""))}`)
+  // Namespace the cache key by partition + identity so private results are never
+  // shared across partitions or identities.
+  const cacheKey = new Request(
+    `https://rabbat.cache/q/${await hash(id + "|" + body + "|" + (identity ? JSON.stringify(identity) : parsed.token ?? ""))}`,
+  )
   const cached = await cache.match(cacheKey)
 
   const headers = new Headers({ "Content-Type": "application/json" })
+  setInternalIdentity(headers, identity, edgeAuth)
   if (cached) {
     const w = cached.headers.get("Rabbat-Watermark")
     if (w) headers.set("If-Rabbat-Watermark", w)
