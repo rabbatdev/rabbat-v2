@@ -1,5 +1,5 @@
 export { rabbat, type RabbatOptions } from "./plugin.js"
-export { discover, findBackendRoot, type Discovery, type ModuleFile } from "./discover.js"
+export { discover, findBackendRoot, scanFunctionExports, type Discovery, type ModuleFile, type FunctionExport } from "./discover.js"
 export { generateApi, generateWorkerEntry, generateWrangler } from "./generate.js"
 export {
   discoverRoutes,

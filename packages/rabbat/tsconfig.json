@@ -1,0 +1,19 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "tsBuildInfoFile": "dist/.tsbuildinfo",
+    "lib": ["ES2023", "DOM"],
+    "types": []
+  },
+  "include": ["src/**/*.ts"],
+  "references": [
+    { "path": "../protocol" },
+    { "path": "../schema" },
+    { "path": "../functions" },
+    { "path": "../server" },
+    { "path": "../db" },
+    { "path": "../vite" }
+  ]
+}

@@ -9,5 +9,5 @@
     "types": []
   },
   "include": ["src/**/*.ts", "src/**/*.tsx"],
-  "references": [{ "path": "../protocol" }, { "path": "../functions" }, { "path": "../client" }, { "path": "../router" }]
+  "references": [{ "path": "../protocol" }, { "path": "../functions" }, { "path": "../client" }, { "path": "../router" }, { "path": "../vite-react" }]
 }

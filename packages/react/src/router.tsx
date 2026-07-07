@@ -25,6 +25,7 @@ import {
 } from "@rabbat/router"
 import type { FunctionsClient, Preload } from "@rabbat/client"
 import { ClientHolderContext, type ClientHolder } from "./provider.js"
+import { applyRouteMeta } from "./meta.js"
 
 // ── Contexts ────────────────────────────────────────────────────────────────
 const RouterCtx = createContext<Router | null>(null)
@@ -185,11 +186,44 @@ export function Outlet(): ReactNode {
   return renderChain(stack.chain, stack.index + 1)
 }
 
-// ── Link + navigation hooks ───────────────────────────────────────────────────
+// ── Page + navigation hooks ────────────────────────────────────────────────────
+
+/** A snapshot of the active page: the matched pattern, the route loader's props,
+ *  its params, and the current URL. Read via {@link usePage} / `useRouter().current`. */
+export interface PageState {
+  /** The matched route pattern (its manifest id). */
+  readonly component: string
+  readonly props: Record<string, unknown>
+  readonly params: Record<string, string>
+  readonly url: string
+}
+
+function toPageState(s: RouterState): PageState {
+  return {
+    component: s.match?.pattern ?? "",
+    props: (s.loaderData["route"] as Record<string, unknown> | undefined) ?? {},
+    params: s.match?.params ?? {},
+    url: s.href,
+  }
+}
+
+/** Options for an imperative navigation. */
+export interface VisitOptions {
+  /** Render the target on the client without a server loader fetch. */
+  readonly clientOnly?: boolean
+  readonly replace?: boolean
+}
+
 export interface RouterApi {
-  navigate(href: string, opts?: { replace?: boolean }): Promise<void>
+  navigate(href: string, opts?: { replace?: boolean; clientOnly?: boolean }): Promise<void>
+  /** Navigate to `href` (pushes history). `clientOnly` renders without a server fetch. */
+  visit(href: string, opts?: VisitOptions): Promise<void>
   prefetch(href: string): Promise<void>
+  /** Re-run the current route's loaders. */
+  refresh(): Promise<void>
   readonly pathname: string
+  /** A snapshot of the active page. */
+  readonly current: PageState
 }
 
 export function useRouter(): RouterApi {
@@ -198,36 +232,72 @@ export function useRouter(): RouterApi {
   if (!router) throw new Error("rabbat router: useRouter outside <RabbatRouter>")
   return {
     navigate: (href, opts) => router.navigate(href, opts),
+    visit: (href, opts) => router.navigate(href, opts),
     prefetch: (href) => router.prefetch(href),
+    refresh: () => router.refresh(),
     pathname: state.pathname,
+    current: toPageState(state),
   }
 }
 
+/** The active page: the route loader's props, its params, and the current URL. */
+export function usePage<P = Record<string, unknown>>(): { props: P; params: Record<string, string>; url: string } {
+  const state = useRouterState()
+  const page = toPageState(state)
+  return { props: page.props as P, params: page.params, url: page.url }
+}
+
+/** The active route's matched params, typed by the caller. */
+export function useParams<T extends Record<string, string> = Record<string, string>>(): T {
+  return (useRouterState().match?.params ?? {}) as T
+}
+
 export interface LinkProps extends Omit<React.AnchorHTMLAttributes<HTMLAnchorElement>, "href"> {
-  /** A path pattern from your routes; pass `params` for its dynamic segments. */
-  readonly to: string
+  /** A path pattern from your routes; pass `params` for its dynamic segments.
+   *  Mutually exclusive with `href` (which takes precedence when both are set). */
+  readonly to?: string
+  /** A fully-formed destination URL (the original framework's `<Link href>` API). */
+  readonly href?: string
   readonly params?: Record<string, string | number>
   readonly search?: Record<string, unknown>
-  readonly prefetch?: boolean
+  /**
+   * Prefetch the route on mount/hover. `true`/"render"/"hover" all enable it
+   * (the original framework's string modes are accepted); `false` disables.
+   */
+  readonly prefetch?: boolean | "render" | "hover" | "none"
+  /** Render this navigation on the client without a server loader fetch. */
+  readonly clientOnly?: boolean
   readonly children: ReactNode
 }
 
-export function Link({ to, params, search, prefetch = true, onClick, onPointerEnter, children, ...rest }: LinkProps) {
+export function Link({
+  to,
+  href: hrefProp,
+  params,
+  search,
+  prefetch = true,
+  clientOnly = false,
+  onClick,
+  onPointerEnter,
+  children,
+  ...rest
+}: LinkProps) {
   const router = useContext(RouterCtx)
-  const href = buildHref(to, params) + (search ? serializeSearch({}, search) : "")
+  const href = hrefProp ?? buildHref(to ?? "/", params) + (search ? serializeSearch({}, search) : "")
   const go = useCallback(
     (e: MouseEvent<HTMLAnchorElement>) => {
       onClick?.(e)
       if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+      if (/^https?:\/\//.test(href)) return // external — let the browser handle it
       e.preventDefault()
-      void router?.navigate(href)
+      void router?.navigate(href, { clientOnly })
     },
-    [router, href, onClick],
+    [router, href, clientOnly, onClick],
   )
   const warm = useCallback(
     (e: React.PointerEvent<HTMLAnchorElement>) => {
       onPointerEnter?.(e)
-      if (prefetch) void router?.prefetch(href)
+      if (prefetch && prefetch !== "none") void router?.prefetch(href)
     },
     [router, href, prefetch, onPointerEnter],
   )
@@ -235,8 +305,10 @@ export function Link({ to, params, search, prefetch = true, onClick, onPointerEn
 }
 
 function useDocumentMeta(state: RouterState): void {
+  // Publish the route's baseline title to the head reconciler; `<Meta>`/`useMeta`
+  // overlays are merged back on top, so a navigation never wipes a still-mounted
+  // component's title.
   useEffect(() => {
-    if (typeof document === "undefined") return
-    if (state.meta.title !== undefined) document.title = state.meta.title
-  }, [state.meta.title])
+    applyRouteMeta(state.meta)
+  }, [state.meta])
 }

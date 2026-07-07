@@ -146,8 +146,8 @@ export interface Customizer<BaseCtx, ModArgs extends PropValidators, ExtraCtx ex
 }
 
 const makeCustom =
-  <BaseCtx, ModArgs extends PropValidators, ExtraCtx extends object, AddArgs extends object>(
-    kind: "query" | "mutation" | "action",
+  <Kind extends "query" | "mutation" | "action", BaseCtx, ModArgs extends PropValidators, ExtraCtx extends object, AddArgs extends object>(
+    kind: Kind,
     customizer: Customizer<BaseCtx, ModArgs, ExtraCtx, AddArgs>,
   ) =>
   <V extends PropValidators, R>(def: {
@@ -156,7 +156,9 @@ const makeCustom =
     middleware?: ReadonlyArray<Middleware<BaseCtx>>
     /** Mark the resulting custom function server-only (not client-callable). */
     internal?: boolean
-  }): Registered<typeof kind, ObjectType<ModArgs> & ObjectType<V>, Awaited<R>> => {
+    // The specific `Kind` literal flows through so `RefOf` can resolve the
+    // custom function to a `FunctionReference<Kind, …>` (a union kind → never).
+  }): Registered<Kind, ObjectType<ModArgs> & ObjectType<V>, Awaited<R>> => {
     const mergedArgs = { ...(customizer.args ?? {}), ...def.args } as PropValidators
     return {
       __kind: kind,
@@ -175,17 +177,17 @@ export function customQuery<DM extends DataModel, ModArgs extends PropValidators
   _base: FunctionBuilders<DM>["query"],
   customizer: Customizer<QueryCtx<DM>, ModArgs, ExtraCtx, AddArgs>,
 ) {
-  return makeCustom<QueryCtx<DM>, ModArgs, ExtraCtx, AddArgs>("query", customizer)
+  return makeCustom<"query", QueryCtx<DM>, ModArgs, ExtraCtx, AddArgs>("query", customizer)
 }
 export function customMutation<DM extends DataModel, ModArgs extends PropValidators, ExtraCtx extends object, AddArgs extends object>(
   _base: FunctionBuilders<DM>["mutation"],
   customizer: Customizer<MutationCtx<DM>, ModArgs, ExtraCtx, AddArgs>,
 ) {
-  return makeCustom<MutationCtx<DM>, ModArgs, ExtraCtx, AddArgs>("mutation", customizer)
+  return makeCustom<"mutation", MutationCtx<DM>, ModArgs, ExtraCtx, AddArgs>("mutation", customizer)
 }
 export function customAction<DM extends DataModel, ModArgs extends PropValidators, ExtraCtx extends object, AddArgs extends object>(
   _base: FunctionBuilders<DM>["action"],
   customizer: Customizer<ActionCtx<DM>, ModArgs, ExtraCtx, AddArgs>,
 ) {
-  return makeCustom<ActionCtx<DM>, ModArgs, ExtraCtx, AddArgs>("action", customizer)
+  return makeCustom<"action", ActionCtx<DM>, ModArgs, ExtraCtx, AddArgs>("action", customizer)
 }

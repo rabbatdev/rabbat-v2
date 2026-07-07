@@ -370,6 +370,41 @@ export class FunctionsClient {
     if (rec.subscribed) this.send({ type: "setPagination", sub: rec.subId, pagination: window })
   }
 
+  /**
+   * Keep a query live in the background without a React component: acquire its
+   * subscription and retain it, returning a dispose fn that releases it. Used by
+   * `useKeepAlive` to pin a dynamic set of queries so navigating to them shows
+   * already-fresh data instead of a stale-then-revalidate flash. Pass `window`
+   * for a paginated query (its live tail is kept warm); omit it for a value query.
+   * Consistent with how `useQuery`/`usePaginatedQuery` acquire + retain.
+   */
+  keepAlive(
+    ref: string | { readonly name: string },
+    args: Record<string, unknown> = {},
+    window?: PaginationOpts,
+  ): () => void {
+    const name = typeof ref === "string" ? ref : ref.name
+    const { key } = window
+      ? this.acquirePaginated<Row>(name, args, window)
+      : this.acquireValue(name, args)
+    this.retain(key)
+    let released = false
+    return () => {
+      if (released) return
+      released = true
+      this.release(key)
+    }
+  }
+
+  /**
+   * Clear the persisted IndexedDB value cache (e.g. on sign-out, so the next
+   * user never hydrates the previous user's snapshots). No-op when persistence
+   * is disabled or IndexedDB is unavailable.
+   */
+  async clearCache(): Promise<void> {
+    await this.cache?.clear()
+  }
+
   private sendSubscribe(rec: SubRecord): void {
     // Never eagerly reset here: the first delta after (re)subscribe replaces the
     // window wholesale (firstDelta), so a transient reconnect swaps data in

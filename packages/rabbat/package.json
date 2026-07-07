@@ -1,0 +1,31 @@
+{
+  "name": "rabbat",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "MIT",
+  "description": "Umbrella package: the original rabbat subpaths (rabbat/functions, /schema, /server, /config, /env, /plugin, /client-core) mapped onto rabbat-v2's @rabbat/* packages.",
+  "exports": {
+    "./functions": { "types": "./dist/functions.d.ts", "default": "./dist/functions.js" },
+    "./schema": { "types": "./dist/schema.d.ts", "default": "./dist/schema.js" },
+    "./server": { "types": "./dist/server.d.ts", "default": "./dist/server.js" },
+    "./config": { "types": "./dist/config.d.ts", "default": "./dist/config.js" },
+    "./env": { "types": "./dist/env.d.ts", "default": "./dist/env.js" },
+    "./plugin": { "types": "./dist/plugin.d.ts", "default": "./dist/plugin.js" },
+    "./client-core": { "types": "./dist/client-core.d.ts", "default": "./dist/client-core.js" }
+  },
+  "files": ["dist", "src"],
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b",
+    "clean": "rm -rf dist *.tsbuildinfo"
+  },
+  "dependencies": {
+    "@rabbat/protocol": "workspace:*",
+    "@rabbat/schema": "workspace:*",
+    "@rabbat/functions": "workspace:*",
+    "@rabbat/server": "workspace:*",
+    "@rabbat/db": "workspace:*",
+    "@rabbat/vite": "workspace:*",
+    "zod": "^3.25.0"
+  }
+}

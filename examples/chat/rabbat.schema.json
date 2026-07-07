@@ -1,0 +1,1189 @@
+{
+  "tables": [
+    {
+      "name": "orbits",
+      "columns": [
+        {
+          "name": "id",
+          "type": "text",
+          "nullable": false,
+          "primary_key": true,
+          "indexed": true,
+          "unique": true
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        },
+        {
+          "name": "invite",
+          "type": "text",
+          "nullable": true,
+          "primary_key": false,
+          "indexed": true,
+          "unique": true
+        },
+        {
+          "name": "hue",
+          "type": "int",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        },
+        {
+          "name": "icon",
+          "type": "text",
+          "nullable": true,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        },
+        {
+          "name": "cover",
+          "type": "text",
+          "nullable": true,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        },
+        {
+          "name": "owner_id",
+          "type": "text",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": true,
+          "unique": false
+        },
+        {
+          "name": "created_at",
+          "type": "int",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": true,
+          "unique": false
+        }
+      ]
+    },
+    {
+      "name": "roles",
+      "columns": [
+        {
+          "name": "id",
+          "type": "text",
+          "nullable": false,
+          "primary_key": true,
+          "indexed": true,
+          "unique": true
+        },
+        {
+          "name": "orbit_id",
+          "type": "text",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": true,
+          "unique": false
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        },
+        {
+          "name": "permissions",
+          "type": "int",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        },
+        {
+          "name": "color",
+          "type": "text",
+          "nullable": true,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        },
+        {
+          "name": "position",
+          "type": "int",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        },
+        {
+          "name": "created_at",
+          "type": "int",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        }
+      ]
+    },
+    {
+      "name": "invites",
+      "columns": [
+        {
+          "name": "id",
+          "type": "text",
+          "nullable": false,
+          "primary_key": true,
+          "indexed": true,
+          "unique": true
+        },
+        {
+          "name": "orbit_id",
+          "type": "text",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": true,
+          "unique": false
+        },
+        {
+          "name": "creator_id",
+          "type": "text",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        },
+        {
+          "name": "expires_at",
+          "type": "int",
+          "nullable": true,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        },
+        {
+          "name": "max_uses",
+          "type": "int",
+          "nullable": true,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        },
+        {
+          "name": "uses",
+          "type": "int",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        },
+        {
+          "name": "created_at",
+          "type": "int",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        }
+      ]
+    },
+    {
+      "name": "members",
+      "columns": [
+        {
+          "name": "id",
+          "type": "text",
+          "nullable": false,
+          "primary_key": true,
+          "indexed": true,
+          "unique": true
+        },
+        {
+          "name": "orbit_id",
+          "type": "text",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": true,
+          "unique": false
+        },
+        {
+          "name": "user_id",
+          "type": "text",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": true,
+          "unique": false
+        },
+        {
+          "name": "role_id",
+          "type": "text",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        },
+        {
+          "name": "joined_at",
+          "type": "int",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": true,
+          "unique": false
+        }
+      ]
+    },
+    {
+      "name": "categories",
+      "columns": [
+        {
+          "name": "id",
+          "type": "text",
+          "nullable": false,
+          "primary_key": true,
+          "indexed": true,
+          "unique": true
+        },
+        {
+          "name": "orbit_id",
+          "type": "text",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": true,
+          "unique": false
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        },
+        {
+          "name": "position",
+          "type": "int",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        }
+      ]
+    },
+    {
+      "name": "channels",
+      "columns": [
+        {
+          "name": "id",
+          "type": "text",
+          "nullable": false,
+          "primary_key": true,
+          "indexed": true,
+          "unique": true
+        },
+        {
+          "name": "orbit_id",
+          "type": "text",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": true,
+          "unique": false
+        },
+        {
+          "name": "category_id",
+          "type": "text",
+          "nullable": true,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        },
+        {
+          "name": "topic",
+          "type": "text",
+          "nullable": true,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        },
+        {
+          "name": "position",
+          "type": "int",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        },
+        {
+          "name": "created_at",
+          "type": "int",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": true,
+          "unique": false
+        },
+        {
+          "name": "view_roles",
+          "type": "text",
+          "nullable": true,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        },
+        {
+          "name": "send_roles",
+          "type": "text",
+          "nullable": true,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        }
+      ]
+    },
+    {
+      "name": "messages",
+      "columns": [
+        {
+          "name": "id",
+          "type": "text",
+          "nullable": false,
+          "primary_key": true,
+          "indexed": true,
+          "unique": true
+        },
+        {
+          "name": "channel_id",
+          "type": "text",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": true,
+          "unique": false
+        },
+        {
+          "name": "author_id",
+          "type": "text",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": true,
+          "unique": false
+        },
+        {
+          "name": "body",
+          "type": "text",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        },
+        {
+          "name": "edited",
+          "type": "bool",
+          "nullable": true,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        },
+        {
+          "name": "reply_to",
+          "type": "text",
+          "nullable": true,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        },
+        {
+          "name": "created_at",
+          "type": "int",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": true,
+          "unique": false
+        },
+        {
+          "name": "attachments",
+          "type": "text",
+          "nullable": true,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        },
+        {
+          "name": "embeds",
+          "type": "text",
+          "nullable": true,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        }
+      ],
+      "indexes": [
+        {
+          "name": "channel_id_created_at",
+          "columns": [
+            "channel_id",
+            "created_at"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "custom_emoji",
+      "columns": [
+        {
+          "name": "id",
+          "type": "text",
+          "nullable": false,
+          "primary_key": true,
+          "indexed": true,
+          "unique": true
+        },
+        {
+          "name": "orbit_id",
+          "type": "text",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": true,
+          "unique": false
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        },
+        {
+          "name": "url",
+          "type": "text",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        },
+        {
+          "name": "creator_id",
+          "type": "text",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        },
+        {
+          "name": "created_at",
+          "type": "int",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": true,
+          "unique": false
+        }
+      ]
+    },
+    {
+      "name": "reactions",
+      "columns": [
+        {
+          "name": "id",
+          "type": "text",
+          "nullable": false,
+          "primary_key": true,
+          "indexed": true,
+          "unique": true
+        },
+        {
+          "name": "message_id",
+          "type": "text",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": true,
+          "unique": false
+        },
+        {
+          "name": "channel_id",
+          "type": "text",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": true,
+          "unique": false
+        },
+        {
+          "name": "user_id",
+          "type": "text",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": true,
+          "unique": false
+        },
+        {
+          "name": "emoji",
+          "type": "text",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        },
+        {
+          "name": "created_at",
+          "type": "int",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": true,
+          "unique": false
+        }
+      ]
+    },
+    {
+      "name": "read_state",
+      "columns": [
+        {
+          "name": "id",
+          "type": "text",
+          "nullable": false,
+          "primary_key": true,
+          "indexed": true,
+          "unique": true
+        },
+        {
+          "name": "user_id",
+          "type": "text",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": true,
+          "unique": false
+        },
+        {
+          "name": "channel_id",
+          "type": "text",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": true,
+          "unique": false
+        },
+        {
+          "name": "last_read_at",
+          "type": "int",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        }
+      ]
+    },
+    {
+      "name": "presence",
+      "columns": [
+        {
+          "name": "user_id",
+          "type": "text",
+          "nullable": false,
+          "primary_key": true,
+          "indexed": true,
+          "unique": true
+        },
+        {
+          "name": "last_seen",
+          "type": "int",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        }
+      ]
+    },
+    {
+      "name": "notifications",
+      "columns": [
+        {
+          "name": "id",
+          "type": "text",
+          "nullable": false,
+          "primary_key": true,
+          "indexed": true,
+          "unique": true
+        },
+        {
+          "name": "user_id",
+          "type": "text",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": true,
+          "unique": false
+        },
+        {
+          "name": "actor_id",
+          "type": "text",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        },
+        {
+          "name": "kind",
+          "type": "text",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        },
+        {
+          "name": "orbit_id",
+          "type": "text",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        },
+        {
+          "name": "channel_id",
+          "type": "text",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        },
+        {
+          "name": "message_id",
+          "type": "text",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        },
+        {
+          "name": "snippet",
+          "type": "text",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        },
+        {
+          "name": "read",
+          "type": "bool",
+          "nullable": true,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        },
+        {
+          "name": "created_at",
+          "type": "int",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": true,
+          "unique": false
+        }
+      ]
+    },
+    {
+      "name": "push_subscriptions",
+      "columns": [
+        {
+          "name": "id",
+          "type": "text",
+          "nullable": false,
+          "primary_key": true,
+          "indexed": true,
+          "unique": true
+        },
+        {
+          "name": "user_id",
+          "type": "text",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": true,
+          "unique": false
+        },
+        {
+          "name": "endpoint",
+          "type": "text",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": true,
+          "unique": true
+        },
+        {
+          "name": "p256dh",
+          "type": "text",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        },
+        {
+          "name": "auth",
+          "type": "text",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        },
+        {
+          "name": "ua",
+          "type": "text",
+          "nullable": true,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        },
+        {
+          "name": "created_at",
+          "type": "int",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": true,
+          "unique": false
+        }
+      ]
+    },
+    {
+      "name": "user",
+      "columns": [
+        {
+          "name": "id",
+          "type": "text",
+          "nullable": false,
+          "primary_key": true,
+          "indexed": true,
+          "unique": true
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        },
+        {
+          "name": "email",
+          "type": "text",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": true,
+          "unique": true
+        },
+        {
+          "name": "emailVerified",
+          "type": "bool",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        },
+        {
+          "name": "image",
+          "type": "text",
+          "nullable": true,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        },
+        {
+          "name": "cover",
+          "type": "text",
+          "nullable": true,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        },
+        {
+          "name": "bio",
+          "type": "text",
+          "nullable": true,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        },
+        {
+          "name": "accent",
+          "type": "text",
+          "nullable": true,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        },
+        {
+          "name": "createdAt",
+          "type": "text",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        },
+        {
+          "name": "updatedAt",
+          "type": "text",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        },
+        {
+          "name": "username",
+          "type": "text",
+          "nullable": true,
+          "primary_key": false,
+          "indexed": true,
+          "unique": true
+        }
+      ]
+    },
+    {
+      "name": "session",
+      "columns": [
+        {
+          "name": "id",
+          "type": "text",
+          "nullable": false,
+          "primary_key": true,
+          "indexed": true,
+          "unique": true
+        },
+        {
+          "name": "expiresAt",
+          "type": "text",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        },
+        {
+          "name": "token",
+          "type": "text",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": true,
+          "unique": true
+        },
+        {
+          "name": "createdAt",
+          "type": "text",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        },
+        {
+          "name": "updatedAt",
+          "type": "text",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        },
+        {
+          "name": "ipAddress",
+          "type": "text",
+          "nullable": true,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        },
+        {
+          "name": "userAgent",
+          "type": "text",
+          "nullable": true,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        },
+        {
+          "name": "userId",
+          "type": "text",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": true,
+          "unique": false
+        }
+      ]
+    },
+    {
+      "name": "account",
+      "columns": [
+        {
+          "name": "id",
+          "type": "text",
+          "nullable": false,
+          "primary_key": true,
+          "indexed": true,
+          "unique": true
+        },
+        {
+          "name": "accountId",
+          "type": "text",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        },
+        {
+          "name": "providerId",
+          "type": "text",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        },
+        {
+          "name": "userId",
+          "type": "text",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": true,
+          "unique": false
+        },
+        {
+          "name": "accessToken",
+          "type": "text",
+          "nullable": true,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        },
+        {
+          "name": "refreshToken",
+          "type": "text",
+          "nullable": true,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        },
+        {
+          "name": "idToken",
+          "type": "text",
+          "nullable": true,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        },
+        {
+          "name": "accessTokenExpiresAt",
+          "type": "text",
+          "nullable": true,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        },
+        {
+          "name": "refreshTokenExpiresAt",
+          "type": "text",
+          "nullable": true,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        },
+        {
+          "name": "scope",
+          "type": "text",
+          "nullable": true,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        },
+        {
+          "name": "password",
+          "type": "text",
+          "nullable": true,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        },
+        {
+          "name": "createdAt",
+          "type": "text",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        },
+        {
+          "name": "updatedAt",
+          "type": "text",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        }
+      ],
+      "indexes": [
+        {
+          "name": "accountId_providerId",
+          "columns": [
+            "accountId",
+            "providerId"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "verification",
+      "columns": [
+        {
+          "name": "id",
+          "type": "text",
+          "nullable": false,
+          "primary_key": true,
+          "indexed": true,
+          "unique": true
+        },
+        {
+          "name": "identifier",
+          "type": "text",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": true,
+          "unique": false
+        },
+        {
+          "name": "value",
+          "type": "text",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        },
+        {
+          "name": "expiresAt",
+          "type": "text",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": true,
+          "unique": false
+        },
+        {
+          "name": "createdAt",
+          "type": "text",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        },
+        {
+          "name": "updatedAt",
+          "type": "text",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        }
+      ]
+    },
+    {
+      "name": "_scheduled",
+      "columns": [
+        {
+          "name": "id",
+          "type": "text",
+          "nullable": false,
+          "primary_key": true,
+          "indexed": true,
+          "unique": true
+        },
+        {
+          "name": "run_at",
+          "type": "int",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": true,
+          "unique": false
+        },
+        {
+          "name": "fn",
+          "type": "text",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        },
+        {
+          "name": "args",
+          "type": "text",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        },
+        {
+          "name": "kind",
+          "type": "text",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        },
+        {
+          "name": "state",
+          "type": "text",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        },
+        {
+          "name": "attempts",
+          "type": "int",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        },
+        {
+          "name": "created_at",
+          "type": "int",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        },
+        {
+          "name": "cron",
+          "type": "text",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        }
+      ]
+    },
+    {
+      "name": "_migrations",
+      "columns": [
+        {
+          "name": "name",
+          "type": "text",
+          "nullable": false,
+          "primary_key": true,
+          "indexed": true,
+          "unique": true
+        },
+        {
+          "name": "applied_at",
+          "type": "int",
+          "nullable": false,
+          "primary_key": false,
+          "indexed": false,
+          "unique": false
+        }
+      ]
+    }
+  ]
+}

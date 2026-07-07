@@ -1,16 +1,25 @@
 {
-  "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "rootDir": ".",
-    "lib": ["ES2023", "DOM", "DOM.Iterable"],
-    "jsx": "react-jsx",
-    "types": [],
+    "target": "ES2022",
+    "useDefineForClassFields": true,
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
     "noEmit": true,
-    "composite": false,
-    "declaration": false,
-    "declarationMap": false,
-    "incremental": false
+    "jsx": "react-jsx",
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "types": ["node", "vite/client"],
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"]
+    }
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx", "rabbat/**/*.ts", "rabbat/**/*.tsx", "test/**/*.ts", "vite.config.ts"],
-  "exclude": ["dist", "node_modules", "rabbat/_generated/worker.ts"]
+  "include": ["src", "rabbat", "rabbat.config.ts", "vite.config.ts"]
 }

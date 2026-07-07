@@ -7,6 +7,14 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./entry-client": {
+      "types": "./dist/entry-client.d.ts",
+      "default": "./dist/entry-client.js"
+    },
+    "./plugin": {
+      "types": "./dist/plugin.d.ts",
+      "default": "./dist/plugin.js"
     }
   },
   "main": "./dist/index.js",
@@ -24,7 +32,8 @@
     "@rabbat/protocol": "workspace:*",
     "@rabbat/functions": "workspace:*",
     "@rabbat/client": "workspace:*",
-    "@rabbat/router": "workspace:*"
+    "@rabbat/router": "workspace:*",
+    "@rabbat/vite-react": "workspace:*"
   },
   "peerDependencies": {
     "react": ">=18",
@@ -34,6 +43,8 @@
     "react": "19.2.0",
     "@types/react": "19.2.2",
     "react-dom": "19.2.0",
-    "@types/react-dom": "19.2.1"
+    "@types/react-dom": "19.2.1",
+    "@vitejs/plugin-react": "6.0.3",
+    "vite": "8.1.0"
   }
 }

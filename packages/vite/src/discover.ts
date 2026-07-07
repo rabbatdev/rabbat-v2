@@ -106,24 +106,44 @@ export function discover(root: string, dir?: string): Discovery {
  * internal function to the browser. Handles `export function`, `export { a }`
  * re-exports, and multi-declarator `export const a = …, b = …`.
  */
-export function scanExports(file: string): string[] {
-  const src = stripComments(readFileSync(file, "utf8"))
-  const names = new Set<string>()
-  const isPublicBuilder = (callee: string): boolean =>
-    callee === "query" ||
-    callee === "mutation" ||
-    callee === "action" ||
-    (/^custom[A-Z]/.test(callee) && !/^internal/i.test(callee))
+/** A discovered function export and whether it is server-only (`internal*`). */
+export interface FunctionExport {
+  readonly name: string
+  readonly internal: boolean
+}
 
-  // Match `export const NAME = builder(` and comma-continued declarators
-  // (`, NAME = builder(`). No dependency on semicolons (the codebase omits
-  // them). The public-builder filter keeps false positives from the comma branch
-  // negligible.
+/** Is `callee` a known function builder? Returns its visibility, or null. */
+function builderKind(callee: string): "public" | "internal" | null {
+  // Server-only builders (Convex-style): internalQuery/internalMutation/internalAction.
+  if (/^internal(Query|Mutation|Action)$/.test(callee)) return "internal"
+  // Public builders: the primitives, the `public*` aliases apps commonly define
+  // in a setup module, and `custom*` wrappers (customQuery/customMutation/...).
+  if (/^(public)?(query|mutation|action)$/i.test(callee)) return "public"
+  if (/^custom[A-Z]/.test(callee)) return "public"
+  return null
+}
+
+/**
+ * The public + internal function exports of a module, classified by the builder
+ * each is bound to. Recognizes the app's aliased builders (a `setup.ts` that
+ * re-exports `query`/`publicQuery`/`internalMutation` etc.), so the generated
+ * `api`/`internal` trees are complete even when builders are aliased. Handles
+ * multi-declarator `export const a = …, b = …` and omitted semicolons.
+ */
+export function scanFunctionExports(file: string): FunctionExport[] {
+  const src = stripComments(readFileSync(file, "utf8"))
+  const seen = new Map<string, boolean>()
   const re = /(?:export\s+const|,)\s*([A-Za-z_$][\w$]*)\s*=\s*([A-Za-z_$][\w$]*)\s*\(/g
   for (const m of src.matchAll(re)) {
-    if (isPublicBuilder(m[2]!)) names.add(m[1]!)
+    const kind = builderKind(m[2]!)
+    if (kind && !seen.has(m[1]!)) seen.set(m[1]!, kind === "internal")
   }
-  return [...names]
+  return [...seen].map(([name, internal]) => ({ name, internal }))
+}
+
+/** Public (client-callable) function export names — the `api` tree entries. */
+export function scanExports(file: string): string[] {
+  return scanFunctionExports(file).filter((e) => !e.internal).map((e) => e.name)
 }
 
 /** Remove line and block comments so commented-out code is never scanned. */

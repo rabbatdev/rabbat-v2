@@ -151,6 +151,66 @@ export function usePaginatedQuery<Ref extends QueryRef<any, any>>(
   }
 }
 
+export interface KeepAliveEntry {
+  /** The query to keep live (e.g. `api.channels.list`). */
+  readonly query: QueryRef<any, any>
+  /** Arguments for the query (defaults to `{}`). */
+  readonly args?: Record<string, unknown>
+  /** Provide for a paginated query — its live tail is kept warm. Omit for a value query. */
+  readonly pagination?: PaginationOpts
+}
+
+function entryKey(e: KeepAliveEntry): string {
+  return JSON.stringify([e.query.name, e.args ?? {}, e.pagination ?? null])
+}
+
+/**
+ * Keep a *dynamic set* of queries live in the background — subscribed (live
+ * server updates) and persisted to IndexedDB — so navigating to them shows
+ * already-fresh data instead of a stale-then-revalidate flash. The set is diffed
+ * across renders: newly-added entries are pinned, removed ones released, and
+ * everything is released on unmount. Mount it somewhere that stays alive across
+ * the navigations you want kept fresh (e.g. above the routes).
+ *
+ * @example
+ *   useKeepAlive(orbits.map((o) => ({ query: api.channels.list, args: { orbitId: o.id } })))
+ */
+export function useKeepAlive(entries: KeepAliveEntry[]): void {
+  const client = useRabbat()
+  const active = useRef(new Map<string, () => void>())
+
+  // A stable signature so the effect only re-runs when the *set* changes.
+  const sig = entries.map(entryKey).sort().join("|")
+  const desired = useMemo(() => {
+    const m = new Map<string, KeepAliveEntry>()
+    for (const e of entries) m.set(entryKey(e), e)
+    return m
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sig])
+
+  useEffect(() => {
+    const cur = active.current
+    for (const [k, e] of desired) {
+      if (!cur.has(k)) cur.set(k, client.keepAlive(e.query.name, e.args ?? {}, e.pagination))
+    }
+    for (const [k, dispose] of [...cur]) {
+      if (!desired.has(k)) {
+        dispose()
+        cur.delete(k)
+      }
+    }
+  }, [client, desired])
+
+  // Release everything when the host unmounts.
+  useEffect(() => {
+    const cur = active.current
+    return () => {
+      for (const d of cur.values()) d()
+      cur.clear()
+    }
+  }, [])
+}
+
 export function useMutation<Ref extends FunctionReference<"mutation", any, any>>(
   ref: Ref,
 ): (args: ArgsOf<Ref>) => Promise<ReturnOf<Ref>> {
