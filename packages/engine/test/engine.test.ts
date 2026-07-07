@@ -234,7 +234,7 @@ function res(row: Row | null): Row {
 const uniqueSchema = compileSchema(
   defineSchema({
     users: defineTable(
-      { id: s.text().primaryKey(), email: s.text().unique(), age: s.int() },
+      { id: s.text().primaryKey(), email: s.text().unique(), age: s.int(), handle: s.text().unique().nullable() },
       { indexes: [{ name: "by_org_name", columns: ["email", "age"], unique: true }] },
     ),
   }),
@@ -266,12 +266,26 @@ describe("unique constraints", () => {
     const rows = await runU(
       Effect.gen(function* () {
         const engine = yield* Engine
-        yield* engine.mutate([{ kind: "insert", table: "users", row: { id: "u1", email: "x@y.com", age: 20 } }])
-        yield* engine.mutate([{ kind: "insert", table: "users", row: { id: "u1", email: "x@y.com", age: 21 } }])
+        yield* engine.mutate([{ kind: "insert", table: "users", row: { id: "u1", email: "x@y.com", age: 20, handle: null } }])
+        yield* engine.mutate([{ kind: "insert", table: "users", row: { id: "u1", email: "x@y.com", age: 21, handle: null } }])
         return res(yield* engine.get("users", "u1"))
       }),
     )
     expect(rows.age).toBe(21)
+  })
+
+  it("allows many rows to share NULL in a unique column (SQL NULL semantics)", async () => {
+    const count = await runU(
+      Effect.gen(function* () {
+        const engine = yield* Engine
+        // `handle` is unique().nullable(); three distinct users all leave it null.
+        yield* engine.mutate([{ kind: "insert", table: "users", row: { id: "a", email: "a@x.com", age: 1, handle: null } }])
+        yield* engine.mutate([{ kind: "insert", table: "users", row: { id: "b", email: "b@x.com", age: 2, handle: null } }])
+        yield* engine.mutate([{ kind: "insert", table: "users", row: { id: "c", email: "c@x.com", age: 3, handle: null } }])
+        return (yield* engine.collect({ table: "users", filters: [], order: [] }, 10)).length
+      }),
+    )
+    expect(count).toBe(3)
   })
 })
 

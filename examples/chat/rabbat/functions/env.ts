@@ -103,7 +103,10 @@ export const env: Env = defineEnv({
           ],
       GOOGLE_ENABLED: Boolean(e.GOOGLE_CLIENT_ID && e.GOOGLE_CLIENT_SECRET),
       // Same value on both sides of the admin endpoint (partition + serverDb).
-      SERVICE_KEY: e.RABBAT_SERVICE_KEY ?? "rabbat-dev-service-key",
+      // `||` (not `??`) so an empty-string env var (Miniflare injects declared
+      // vars as "") still falls back to the dev key — otherwise the two isolates
+      // can disagree and the admin call 401s.
+      SERVICE_KEY: e.RABBAT_SERVICE_KEY || "rabbat-dev-service-key",
     };
   },
 });

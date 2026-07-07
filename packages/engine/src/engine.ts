@@ -220,10 +220,14 @@ function checkUnique(
   return Effect.gen(function* () {
     for (const idx of table.indexes) {
       if (!idx.unique) continue
+      const uniqueCols = idx.columns.filter((c) => c !== table.pk)
+      // SQL semantics: a NULL in a unique column does not participate — multiple
+      // rows may share NULL. Skip the check when any unique column is null (e.g.
+      // an `unique().nullable()` column left unset).
+      if (uniqueCols.some((c) => (row[c] ?? null) === null)) continue
       // Index keys are [uniqueCols…, pk], so the exact key embeds this row's own
       // pk and can never collide with a *different* row. Instead scan the prefix
       // of just the unique columns and fail if any live entry has another pk.
-      const uniqueCols = idx.columns.filter((c) => c !== table.pk)
       const prefix = encodeKey(uniqueCols.map((c) => row[c] ?? null))
       if (before) {
         const beforePrefix = encodeKey(uniqueCols.map((c) => before[c] ?? null))
