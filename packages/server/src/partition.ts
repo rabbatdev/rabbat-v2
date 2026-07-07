@@ -1,19 +1,24 @@
 import { Effect, Layer } from "effect"
 import {
   type ClientMessage,
+  type DbPage,
+  type DbRequest,
+  type DbWrite,
   type PaginationOpts,
   type ServerMessage,
+  SERVICE_KEY_HEADER,
   decodeClientMessage,
 } from "@rabbat/protocol"
 import type { SchemaInfo } from "@rabbat/schema"
 import {
   type DurableState,
+  type Mutation,
   Engine,
   EngineLive,
   LsmStoreLive,
   R2BlobStore,
 } from "@rabbat/engine"
-import type { Identity } from "@rabbat/functions"
+import { type Identity, COLLECT_LIMIT } from "@rabbat/functions"
 import { ReactiveHub, type Outbound } from "./reactive.js"
 import { Runtime, type Modules } from "./runtime.js"
 
@@ -29,6 +34,12 @@ export interface PartitionConfig {
   readonly flushBytes?: number
   /** Max bytes a single inbound WebSocket/HTTP message may carry (default 1 MiB). */
   readonly maxMessageBytes?: number
+  /**
+   * Enables the privileged `/db` admin endpoint (used by `@rabbat/db`). Requests
+   * must present this exact key. Source it from a secret env var; NEVER expose it
+   * to the browser. When unset, `/db` is disabled and returns 403.
+   */
+  readonly serviceKey?: string
 }
 
 const DEFAULT_MAX_MESSAGE_BYTES = 1 << 20
@@ -116,8 +127,71 @@ export function definePartition(config: PartitionConfig): {
       if (url.pathname.endsWith("/query")) return this.httpQuery(request)
       if (url.pathname.endsWith("/mutate")) return this.httpMutate(request)
       if (url.pathname.endsWith("/call")) return this.httpCall(request)
+      if (url.pathname.endsWith("/db")) return this.httpDb(request)
       if (url.pathname.endsWith("/lsn")) return json({ watermark: this.engine.lsn() })
       return new Response("not found", { status: 404 })
+    }
+
+    /**
+     * The privileged admin/DB endpoint (`@rabbat/db`). Executes raw, un-named
+     * table operations directly against the engine — bypassing the function
+     * layer's validators/auth by design (a flexible client for code running
+     * outside a rabbat function). Gated by a constant-time service-key check;
+     * writes still run through the single-writer commit path (durable +
+     * reactive fan-out) and the engine's own validation (kinds, unique, caps).
+     */
+    private async httpDb(request: Request): Promise<Response> {
+      if (!config.serviceKey) {
+        return json({ ok: false, error: "admin DB endpoint disabled (no serviceKey configured)" }, {}, 403)
+      }
+      const presented = request.headers.get(SERVICE_KEY_HEADER)
+      if (!presented || !(await safeKeyEqual(presented, config.serviceKey))) {
+        return json({ ok: false, error: "unauthorized" }, {}, 401)
+      }
+      let req: DbRequest
+      try {
+        req = (await readJson(request, maxBytes)) as DbRequest
+      } catch (e) {
+        return json({ ok: false, error: clientError(e) }, {}, 400)
+      }
+      try {
+        switch (req.op) {
+          case "get": {
+            const value = await Effect.runPromise(this.engine.get(req.table, req.pk))
+            return json({ ok: true, value })
+          }
+          case "query": {
+            const limit = clampLimit(req.limit)
+            const value = await Effect.runPromise(this.engine.collect(req.spec, limit))
+            return json({ ok: true, value })
+          }
+          case "paginate": {
+            const out = await Effect.runPromise(this.engine.paginate(req.spec, req.opts))
+            const value: DbPage = {
+              rows: out.rows,
+              pk: out.pk,
+              order: out.order,
+              hasOlder: out.hasOlder,
+              hasNewer: out.hasNewer,
+              total: out.total,
+            }
+            return json({ ok: true, value })
+          }
+          case "mutate": {
+            if (!Array.isArray(req.writes)) return json({ ok: false, error: "writes must be an array" }, {}, 400)
+            const mutations = req.writes.map(toEngineMutation)
+            const result = await this.serialize(() => Effect.runPromise(this.engine.mutate(mutations)))
+            // Same durability + reactivity as a function mutation: persist before
+            // returning, then fan out deltas so live subscriptions update.
+            await this.afterCommit(result.changes, [])
+            return json({ ok: true, value: { lsn: result.lsn, changes: result.changes.length } })
+          }
+          default:
+            return json({ ok: false, error: "unknown op" }, {}, 400)
+        }
+      } catch (e) {
+        return json({ ok: false, error: clientError(e) }, {}, 400)
+      }
     }
 
     /**
@@ -468,6 +542,52 @@ function backoffMs(attempt: number): number {
   return Math.min(1000 * 2 ** attempt, 60_000)
 }
 
+/**
+ * Max rows a single admin `query` may pull. `QueryBuilder.collect()` deliberately
+ * over-fetches by one (COLLECT_LIMIT + 1) so that hitting the cap raises a loud
+ * error instead of silently truncating — so the admin cap must allow that
+ * sentinel row through, i.e. COLLECT_LIMIT + 1, or the guard never fires.
+ */
+const DB_QUERY_LIMIT = COLLECT_LIMIT + 1
+function clampLimit(n: unknown): number {
+  if (typeof n !== "number" || !Number.isInteger(n) || n < 0) return DB_QUERY_LIMIT
+  return Math.min(n, DB_QUERY_LIMIT)
+}
+
+/** Map an admin wire-write to an engine mutation (engine re-validates values). */
+function toEngineMutation(w: DbWrite): Mutation {
+  switch (w.kind) {
+    case "insert":
+      return { kind: "insert", table: w.table, row: w.row }
+    case "patch":
+      return { kind: "patch", table: w.table, pk: w.pk, fields: w.fields }
+    case "delete":
+      return { kind: "delete", table: w.table, pk: w.pk }
+    default:
+      // Untrusted input: reject an unknown write kind with a clear message
+      // rather than mapping to `undefined` and surfacing a masked internal error.
+      throw new Error(`unknown write kind: ${JSON.stringify((w as { kind?: unknown }).kind)}`)
+  }
+}
+
+/**
+ * Constant-time service-key comparison. Both sides are SHA-256'd first so the
+ * compare is over fixed-length digests (no length leak) and takes the same time
+ * regardless of where the first mismatching byte is.
+ */
+async function safeKeyEqual(a: string, b: string): Promise<boolean> {
+  const enc = new TextEncoder()
+  const [da, db] = await Promise.all([
+    crypto.subtle.digest("SHA-256", enc.encode(a)),
+    crypto.subtle.digest("SHA-256", enc.encode(b)),
+  ])
+  const x = new Uint8Array(da)
+  const y = new Uint8Array(db)
+  let diff = 0
+  for (let i = 0; i < x.length; i++) diff |= x[i]! ^ y[i]!
+  return diff === 0
+}
+
 function chunkCount(len: number, chunk: number): number {
   return len === 0 ? 0 : Math.ceil(len / chunk)
 }
@@ -626,7 +746,7 @@ function clientError(e: unknown): string {
   const msg = e instanceof Error ? e.message : String(e)
   // Surface validation/query/uniqueness errors; mask everything else.
   if (["ValidationError", "QueryError", "UniqueViolation", "CursorError"].includes(name)) return msg
-  if (/^(unknown function|Authentication required|not a (query|mutation|action)|subscription limit|message too large|missing function name|request body too large)/.test(msg)) {
+  if (/^(unknown function|Authentication required|not a (query|mutation|action)|subscription limit|message too large|missing function name|request body too large|unknown write kind|writes must be an array|unknown op)/.test(msg)) {
     return msg
   }
   return "internal error"

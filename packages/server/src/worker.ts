@@ -36,6 +36,19 @@ export interface WorkerConfig {
   readonly maxBodyBytes?: number
   /** How long a cached query body may be served on a 304 revalidation (default 1h). */
   readonly cacheTtlSeconds?: number
+  /**
+   * Expose the privileged `@rabbat/db` admin endpoint over HTTP at
+   * `POST /_rabbat/db` (forwarded to the partition's service-key-gated `/db`).
+   * Off by default. Only enable for server-to-server use behind TLS; the
+   * partition still enforces the service key, so a leaked route alone grants
+   * nothing. Prefer the in-Worker `bindingTransport` and leave this off.
+   *
+   * NOTE: admin routing uses only the client-supplied `?partition=` hint (there
+   * is no request identity to shard on), so a sharded backend's `partitionFor`
+   * is called with just `{ partition }`. The service key is a full-partition
+   * master credential — a holder can target any partition.
+   */
+  readonly dbAdmin?: boolean
   /** `defineServerRoute` definitions, mounted on Hono after the built-in routes. */
   readonly apiRoutes?: ReadonlyArray<ServerRouteDef>
   /**
@@ -111,6 +124,17 @@ export function defineWorker(config: WorkerConfig = {}): ExportedHandler<WorkerE
         const id = partitionFor({ name: parsed.name, args: parsed.args, identity, partition: partitionHint })
         return stubFor(env, id).fetch(
           new Request("https://do/mutate", { method: "POST", body, headers: request.headers }),
+        )
+      }
+
+      // Privileged admin DB endpoint (opt-in), forwarded to the owning partition
+      // which enforces the service key. The key travels in the header unchanged.
+      if (config.dbAdmin && url.pathname === "/_rabbat/db" && request.method === "POST") {
+        const body = await request.text()
+        if (body.length > maxBody) return new Response("payload too large", { status: 413 })
+        const id = partitionFor({ partition: partitionHint })
+        return stubFor(env, id).fetch(
+          new Request("https://do/db", { method: "POST", body, headers: request.headers }),
         )
       }
 

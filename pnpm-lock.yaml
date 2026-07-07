@@ -115,6 +115,25 @@ importers:
         specifier: workspace:*
         version: link:../schema
 
+  packages/db:
+    dependencies:
+      '@rabbat/functions':
+        specifier: workspace:*
+        version: link:../functions
+      '@rabbat/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+      '@rabbat/schema':
+        specifier: workspace:*
+        version: link:../schema
+    devDependencies:
+      '@rabbat/engine':
+        specifier: workspace:*
+        version: link:../engine
+      effect:
+        specifier: 4.0.0-beta.91
+        version: 4.0.0-beta.91
+
   packages/engine:
     dependencies:
       '@rabbat/protocol':

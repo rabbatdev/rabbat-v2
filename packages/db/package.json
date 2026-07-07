@@ -1,0 +1,32 @@
+{
+  "name": "@rabbat/db",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "MIT",
+  "description": "Server-only, flexible DB client for Rabbat — non-reactive queries/mutations outside a function context (e.g. auth adapters). Connects to a partition over a service-key-authenticated admin endpoint. NOT for browser use.",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": ["dist", "src"],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b",
+    "test": "vitest run",
+    "clean": "rm -rf dist *.tsbuildinfo"
+  },
+  "dependencies": {
+    "@rabbat/protocol": "workspace:*",
+    "@rabbat/schema": "workspace:*",
+    "@rabbat/functions": "workspace:*"
+  },
+  "devDependencies": {
+    "@rabbat/engine": "workspace:*",
+    "effect": "4.0.0-beta.91"
+  }
+}

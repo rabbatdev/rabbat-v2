@@ -65,7 +65,9 @@ for live WebSocket subscriptions — coordination, with R2 as the substrate.
 | `@rabbat/engine` | The database engine, built on Effect: the R2 LSM store (WAL, memtable, sorted segments, sparse block index, block cache), RQL query spec, keyset cursors, bi-directional windows + jump-to-item, the IVM reactive engine, and query-result caching. |
 | `@rabbat/server` | The `RabbatPartition` Durable Object + the routing/SSR Worker, the functions runtime (`query`/`mutation`/`action`, `ctx`, validators, auth/middleware), hibernatable-WebSocket sync, and the conditional query cache. |
 | `@rabbat/client` | The reactive client: `FunctionsClient`, the incremental `SubscriptionStore`, the IndexedDB LRU `ValueCache`, and SSR preload seeding. |
+| `@rabbat/db` | A flexible, **server-only** DB client for non-reactive queries/mutations *outside* a function context (auth adapters, scripts, crons). Connects to a partition over a service-key-gated admin endpoint; writes stay durable, engine-validated, and reactive. Not for the browser. |
 | `@rabbat/react` | React adapter: `useQuery` / `usePaginatedQuery` / `useMutation` / `useAction`, the `RabbatProvider`, and SSR preload/hydration. |
+| `@rabbat/router` · `@rabbat/vite-react` | File-based routing: `defineRoute`/`defineLayout`/`defineServerRoute` + the React adapter (`rabbatReact()`) that generates the route manifest, typed `Link`, and client entry. |
 | `@rabbat/codegen` | Schema + functions → generated `api.ts` (typed `api`/`internal` trees) and schema JSON. |
 | `@rabbat/vite` | The `rabbat()` Vite plugin: auto-discovers `schema.ts` + `functions/`, generates the wired Worker + Durable Object entry + wrangler config + typed `api`, and bundles React + the Cloudflare runtime — so an app is just a schema, functions, and a React UI. |
 | `@rabbat/cli` | `rabbat dev` / `build` / `deploy` / `codegen` — drives Vite + wrangler under the hood; the user never touches either directly. |

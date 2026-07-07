@@ -44,10 +44,10 @@ export function generateWorkerEntry(disco: Discovery): string {
   lines.push(`const config: any = ${cfg}`)
   lines.push("")
   lines.push(
-    `export const RabbatPartition = definePartition({ schema: compileSchema(schema as any, { strictIndexes: config.strictIndexes }), modules: modules as any, auth: config.auth, flushBytes: config.flushBytes, maxMessageBytes: config.maxMessageBytes })`,
+    `export const RabbatPartition = definePartition({ schema: compileSchema(schema as any, { strictIndexes: config.strictIndexes }), modules: modules as any, auth: config.auth, flushBytes: config.flushBytes, maxMessageBytes: config.maxMessageBytes, serviceKey: config.serviceKey })`,
   )
   lines.push(
-    `export default defineWorker({ partitionFor: config.partitionFor, authenticate: config.authenticate, apiRoutes, auth: config.auth })`,
+    `export default defineWorker({ partitionFor: config.partitionFor, authenticate: config.authenticate, apiRoutes, auth: config.auth, dbAdmin: config.dbAdmin })`,
   )
   lines.push("")
   return lines.join("\n")
@@ -68,9 +68,9 @@ export function generateWrangler(name: string, compatDate: string): string {
     r2_buckets: [{ binding: "RABBAT_BUCKET", bucket_name: name }],
     assets: {
       not_found_handling: "single-page-application",
-      // Run the Worker first for sync + function + API paths; everything else
-      // is served as the SPA.
-      run_worker_first: ["/ws", "/functions", "/api/*"],
+      // Run the Worker first for sync + function + API + admin paths; everything
+      // else is served as the SPA.
+      run_worker_first: ["/ws", "/functions", "/api/*", "/_rabbat/*"],
     },
     observability: { enabled: true },
   }
