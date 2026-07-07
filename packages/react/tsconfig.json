@@ -4,10 +4,10 @@
     "rootDir": "src",
     "outDir": "dist",
     "tsBuildInfoFile": "dist/.tsbuildinfo",
-    "lib": ["ES2023", "DOM"],
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "jsx": "react-jsx",
     "types": []
   },
   "include": ["src/**/*.ts", "src/**/*.tsx"],
-  "references": [{ "path": "../protocol" }, { "path": "../functions" }, { "path": "../client" }]
+  "references": [{ "path": "../protocol" }, { "path": "../functions" }, { "path": "../client" }, { "path": "../router" }]
 }

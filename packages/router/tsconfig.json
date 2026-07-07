@@ -5,13 +5,8 @@
     "outDir": "dist",
     "tsBuildInfoFile": "dist/.tsbuildinfo",
     "lib": ["ES2023", "DOM"],
-    "types": ["@cloudflare/workers-types"]
+    "types": []
   },
   "include": ["src/**/*.ts"],
-  "references": [
-    { "path": "../protocol" },
-    { "path": "../schema" },
-    { "path": "../engine" },
-    { "path": "../functions" }, { "path": "../router" }
-  ]
+  "references": [{ "path": "../protocol" }, { "path": "../functions" }]
 }

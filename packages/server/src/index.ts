@@ -1,4 +1,6 @@
 export { Runtime, type RuntimeConfig, type Modules, type ScheduledCall } from "./runtime.js"
 export { ReactiveHub, type Outbound } from "./reactive.js"
 export { definePartition, type PartitionConfig } from "./partition.js"
-export { defineWorker, type WorkerConfig } from "./worker.js"
+export { defineWorker, type WorkerConfig, type RouteInfo } from "./worker.js"
+export { createApiApp, type ApiDeps } from "./api.js"
+export { defineServerRoute, type ServerContext, type ServerRouteDef, type ServerMiddleware } from "@rabbat/router"

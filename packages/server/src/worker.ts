@@ -1,5 +1,7 @@
 /// <reference lib="dom" />
+import type { ServerRouteDef } from "@rabbat/router"
 import type { Identity } from "@rabbat/functions"
+import { createApiApp } from "./api.js"
 import type { Modules } from "./runtime.js"
 
 /** What the router knows about a request when choosing a partition. */
@@ -34,6 +36,13 @@ export interface WorkerConfig {
   readonly maxBodyBytes?: number
   /** How long a cached query body may be served on a 304 revalidation (default 1h). */
   readonly cacheTtlSeconds?: number
+  /** `defineServerRoute` definitions, mounted on Hono after the built-in routes. */
+  readonly apiRoutes?: ReadonlyArray<ServerRouteDef>
+  /**
+   * Resolve a token into an identity for API-route contexts. Mirror the
+   * partition's `auth` so an API route and a function see the same identity.
+   */
+  readonly auth?: (token: string | null) => Identity | null | Promise<Identity | null>
   /** Modules, only used to expose names for diagnostics. */
   readonly modules?: Modules
 }
@@ -105,6 +114,29 @@ export function defineWorker(config: WorkerConfig = {}): ExportedHandler<WorkerE
         )
       }
 
+      // User-defined edge API routes (`defineServerRoute`), mounted on Hono.
+      // Their `ctx.run*` proxy to the owning partition's `/call` endpoint, which
+      // validates args + resolves identity exactly like a function call.
+      if (config.apiRoutes && config.apiRoutes.length > 0) {
+        const app = createApiApp(config.apiRoutes, {
+          auth: config.auth ?? (() => null),
+          env: env as Record<string, unknown>,
+          call: async (kind, name, args, token) => {
+            const res = await stubFor(env, partitionFor({ name, args, partition: partitionHint })).fetch(
+              new Request("https://do/call", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ kind, name, args, token }),
+              }),
+            )
+            if (!res.ok) throw new Error(((await res.json()) as { error?: string }).error ?? "call failed")
+            return ((await res.json()) as { value: unknown }).value
+          },
+        })
+        const res = await app.fetch(request)
+        if (res.status !== 404) return res
+      }
+
       return new Response("rabbat: not found", { status: 404 })
     },
   }
@@ -161,7 +193,11 @@ async function handleQuery(
       headers: {
         "Content-Type": "application/json",
         "Rabbat-Watermark": watermark,
-        "Cache-Control": `private, max-age=${cacheTtl}`,
+        // NOTE: must NOT be `private` — Cloudflare's shared Cache API refuses to
+        // store `Cache-Control: private` responses, which would silently disable
+        // this whole conditional-cache path. Privacy is enforced by the cache KEY
+        // (hashed over partition id + args + token), not by this header.
+        "Cache-Control": `max-age=${cacheTtl}`,
       },
     })
     await cache.put(cacheKey, toCache.clone())

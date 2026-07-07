@@ -28,6 +28,9 @@ export function generateWorkerEntry(disco: Discovery): string {
   for (const m of disco.modules) {
     lines.push(`import * as ${ident(m.name)} from ${JSON.stringify(importSpec(from, m.path))}`)
   }
+  disco.serverRoutes.forEach((r, i) => {
+    lines.push(`import _api${i} from ${JSON.stringify(importSpec(from, r.path))}`)
+  })
   if (disco.configPath) {
     lines.push(`import * as _config from ${JSON.stringify(importSpec(from, disco.configPath))}`)
   }
@@ -35,13 +38,17 @@ export function generateWorkerEntry(disco: Discovery): string {
   lines.push(
     `const modules = {\n${disco.modules.map((m) => `  ${JSON.stringify(m.name)}: ${ident(m.name)},`).join("\n")}\n}`,
   )
+  const apiList = disco.serverRoutes.map((_, i) => `_api${i}`).join(", ")
+  lines.push(`const apiRoutes = [${apiList}]`)
   const cfg = disco.configPath ? `(_config as { default?: any }).default ?? _config` : "{}"
   lines.push(`const config: any = ${cfg}`)
   lines.push("")
   lines.push(
-    `export const RabbatPartition = definePartition({ schema: compileSchema(schema as any), modules: modules as any, auth: config.auth })`,
+    `export const RabbatPartition = definePartition({ schema: compileSchema(schema as any, { strictIndexes: config.strictIndexes }), modules: modules as any, auth: config.auth, flushBytes: config.flushBytes, maxMessageBytes: config.maxMessageBytes })`,
   )
-  lines.push(`export default defineWorker({ partitionFor: config.partitionFor })`)
+  lines.push(
+    `export default defineWorker({ partitionFor: config.partitionFor, authenticate: config.authenticate, apiRoutes, auth: config.auth })`,
+  )
   lines.push("")
   return lines.join("\n")
 }
@@ -59,7 +66,12 @@ export function generateWrangler(name: string, compatDate: string): string {
     durable_objects: { bindings: [{ name: "RABBAT_PARTITION", class_name: "RabbatPartition" }] },
     migrations: [{ tag: "v1", new_sqlite_classes: ["RabbatPartition"] }],
     r2_buckets: [{ binding: "RABBAT_BUCKET", bucket_name: name }],
-    assets: { not_found_handling: "single-page-application" },
+    assets: {
+      not_found_handling: "single-page-application",
+      // Run the Worker first for sync + function + API paths; everything else
+      // is served as the SPA.
+      run_worker_first: ["/ws", "/functions", "/api/*"],
+    },
     observability: { enabled: true },
   }
   return JSON.stringify(config, null, 2)

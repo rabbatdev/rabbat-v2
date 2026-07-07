@@ -1,5 +1,7 @@
+import { createRequire } from "node:module"
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { join, resolve } from "node:path"
+import { pathToFileURL } from "node:url"
 import { discover, generateApi, generateWorkerEntry, generateWrangler } from "@rabbat/vite/codegen"
 
 const COMPAT_DATE = "2025-10-01"
@@ -36,18 +38,52 @@ export function expectedDistWranglerConfig(root: string): string {
 }
 
 /**
- * Generate everything an app needs from its `rabbat/schema.ts` + `rabbat/functions/`:
- * the typed `api` tree, the wired Worker + Durable Object entry, and the wrangler
- * config — all into `rabbat/_generated/`. The user imports no modules and writes
- * no wrangler/worker boilerplate.
+ * Detect the installed frontend adapter (any `@rabbat/vite-*` dependency) and run
+ * its route codegen — so the CLI stays framework-agnostic: React today, Vue or
+ * Svelte tomorrow, all via the same `writeRoutes` convention.
  */
-export function runCodegen(cwd: string): void {
+async function frontendCodegen(cwd: string): Promise<string | null> {
+  let pkg: { dependencies?: Record<string, string>; devDependencies?: Record<string, string> }
+  try {
+    pkg = JSON.parse(readFileSync(join(cwd, "package.json"), "utf8"))
+  } catch {
+    return null
+  }
+  const deps = { ...pkg.dependencies, ...pkg.devDependencies }
+  const adapters = Object.keys(deps).filter((d) => /^@rabbat\/vite-/.test(d))
+  const require = createRequire(join(cwd, "noop.js"))
+  for (const adapter of adapters) {
+    try {
+      const mod = (await import(pathToFileURL(require.resolve(`${adapter}/codegen`)).href)) as {
+        writeRoutes?: (root: string) => unknown
+      }
+      if (mod.writeRoutes) {
+        mod.writeRoutes(cwd)
+        return adapter
+      }
+    } catch {
+      /* adapter not resolvable; skip */
+    }
+  }
+  return null
+}
+
+/**
+ * Generate everything: the backend (typed `api`, the wired Worker + Durable
+ * Object entry, the wrangler config) plus the frontend routes via the installed
+ * framework adapter. The user imports no modules and writes no boilerplate.
+ */
+export async function runCodegen(cwd: string): Promise<void> {
   const disco = discover(cwd)
   const name = appName(cwd)
   mkdirSync(disco.generatedDir, { recursive: true })
   writeFileSync(join(disco.generatedDir, "worker.ts"), generateWorkerEntry(disco))
   writeFileSync(join(disco.generatedDir, "wrangler.jsonc"), generateWrangler(name, COMPAT_DATE))
   writeFileSync(join(disco.generatedDir, "api.ts"), generateApi(disco))
+  const adapter = await frontendCodegen(cwd)
   // eslint-disable-next-line no-console
-  console.log(`rabbat: generated api + worker for "${name}" (${disco.modules.length} modules → ${disco.generatedDir})`)
+  console.log(
+    `rabbat: generated api + worker for "${name}" (${disco.modules.length} modules)` +
+      (adapter ? ` + routes (${adapter})` : ""),
+  )
 }

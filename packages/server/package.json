@@ -26,7 +26,9 @@
     "@rabbat/protocol": "workspace:*",
     "@rabbat/schema": "workspace:*",
     "@rabbat/engine": "workspace:*",
-    "@rabbat/functions": "workspace:*"
+    "@rabbat/functions": "workspace:*",
+    "hono": "4.12.27",
+    "@rabbat/router": "workspace:*"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "4.20260629.1",

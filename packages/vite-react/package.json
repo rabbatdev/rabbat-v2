@@ -1,0 +1,24 @@
+{
+  "name": "@rabbat/vite-react",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "MIT",
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
+    "./codegen": { "types": "./dist/codegen.d.ts", "default": "./dist/codegen.js" }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": ["dist", "src"],
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b",
+    "clean": "rm -rf dist *.tsbuildinfo"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "6.0.3",
+    "@rabbat/vite": "workspace:*"
+  },
+  "peerDependencies": { "vite": "^8.0.0" },
+  "devDependencies": { "@types/node": "22.18.0", "vite": "8.1.0" }
+}

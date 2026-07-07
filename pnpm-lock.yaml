@@ -42,6 +42,9 @@ importers:
       '@rabbat/react':
         specifier: workspace:*
         version: link:../../packages/react
+      '@rabbat/router':
+        specifier: workspace:*
+        version: link:../../packages/router
       '@rabbat/schema':
         specifier: workspace:*
         version: link:../../packages/schema
@@ -61,6 +64,9 @@ importers:
       '@rabbat/vite':
         specifier: workspace:*
         version: link:../../packages/vite
+      '@rabbat/vite-react':
+        specifier: workspace:*
+        version: link:../../packages/vite-react
       '@types/react':
         specifier: 19.2.2
         version: 19.2.2
@@ -154,13 +160,35 @@ importers:
       '@rabbat/protocol':
         specifier: workspace:*
         version: link:../protocol
+      '@rabbat/router':
+        specifier: workspace:*
+        version: link:../router
     devDependencies:
       '@types/react':
         specifier: 19.2.2
         version: 19.2.2
+      '@types/react-dom':
+        specifier: 19.2.1
+        version: 19.2.1(@types/react@19.2.2)
       react:
         specifier: 19.2.0
         version: 19.2.0
+      react-dom:
+        specifier: 19.2.0
+        version: 19.2.0(react@19.2.0)
+
+  packages/router:
+    dependencies:
+      '@rabbat/functions':
+        specifier: workspace:*
+        version: link:../functions
+      '@rabbat/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+    devDependencies:
+      vitest:
+        specifier: 3.2.4
+        version: 3.2.4(@types/node@22.18.0)(lightningcss@1.32.0)(yaml@2.9.0)
 
   packages/schema: {}
 
@@ -175,12 +203,18 @@ importers:
       '@rabbat/protocol':
         specifier: workspace:*
         version: link:../protocol
+      '@rabbat/router':
+        specifier: workspace:*
+        version: link:../router
       '@rabbat/schema':
         specifier: workspace:*
         version: link:../schema
       effect:
         specifier: 4.0.0-beta.91
         version: 4.0.0-beta.91
+      hono:
+        specifier: 4.12.27
+        version: 4.12.27
     devDependencies:
       '@cloudflare/workers-types':
         specifier: 4.20260629.1
@@ -194,6 +228,19 @@ importers:
       '@cloudflare/vite-plugin':
         specifier: 1.42.3
         version: 1.42.3(vite@8.1.0(@types/node@22.18.0)(esbuild@0.28.1)(yaml@2.9.0))(workerd@1.20260625.1)(wrangler@4.105.0(@cloudflare/workers-types@4.20260629.1))
+    devDependencies:
+      '@types/node':
+        specifier: 22.18.0
+        version: 22.18.0
+      vite:
+        specifier: 8.1.0
+        version: 8.1.0(@types/node@22.18.0)(esbuild@0.28.1)(yaml@2.9.0)
+
+  packages/vite-react:
+    dependencies:
+      '@rabbat/vite':
+        specifier: workspace:*
+        version: link:../vite
       '@vitejs/plugin-react':
         specifier: 6.0.3
         version: 6.0.3(vite@8.1.0(@types/node@22.18.0)(esbuild@0.28.1)(yaml@2.9.0))
@@ -1107,6 +1154,10 @@ packages:
     resolution: {integrity: sha512-5xoDfX+fL7faATnagmWPpbFtwh/R77WmMMqqHGS65C3vvB0YHrgF+B1YmZ3441tMj5n63k0212XNoJwzlhffQw==}
     engines: {node: ^8.16.0 || ^10.6.0 || >=11.0.0}
     os: [darwin]
+
+  hono@4.12.27:
+    resolution: {integrity: sha512-1yrb/+w6HWQJrUCLkJ2IF5jNIPvvFkblV5RNOYl6bV+OA6p9GLcMpHFFGTosSvHvcAUibuUukRqhlYI4z32C7Q==}
+    engines: {node: '>=16.9.0'}
 
   ini@7.0.0:
     resolution: {integrity: sha512-ifK0CgjALofS5bkrcTy4RaQ9Vx2Knf/eLeIO+NaswQEpH1UblrtTSCIvN71qQDMq0PeQ/SSPojvEJp9vvvfr+w==}
@@ -2219,6 +2270,8 @@ snapshots:
 
   fsevents@2.3.3:
     optional: true
+
+  hono@4.12.27: {}
 
   ini@7.0.0: {}
 

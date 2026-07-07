@@ -1,7 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { cloudflare } from "@cloudflare/vite-plugin"
-import react from "@vitejs/plugin-react"
 import type { Plugin, PluginOption } from "vite"
 import { discover, type Discovery } from "./discover.js"
 import { generateApi, generateWorkerEntry, generateWrangler } from "./generate.js"
@@ -49,13 +48,15 @@ function generateAll(disco: Discovery, name: string, compatDate: string): void {
  * ```ts
  * import { defineConfig } from "vite"
  * import { rabbat } from "@rabbat/vite"
- * export default defineConfig({ plugins: [rabbat()] })
+ * import { rabbatReact } from "@rabbat/vite-react"
+ * export default defineConfig({ plugins: [rabbatReact(), rabbat()] })
  * ```
  *
- * It discovers `schema.ts` + `functions/`, generates the wired Worker + Durable
- * Object entry, the wrangler config, and the typed `api` tree, and wires React +
- * the Cloudflare runtime — so the user writes a schema, functions, and a React
- * app, and nothing else. `vite dev` runs the whole stack (DO + R2) on Miniflare.
+ * It discovers `schema.ts` + `functions/` + `api/`, generates the wired Worker +
+ * Durable Object entry, the wrangler config, and the typed `api` tree, and wires
+ * the Cloudflare runtime. It is **framework-agnostic** — pair it with a frontend
+ * adapter (`rabbatReact()`, later `rabbatVue()`/`rabbatSvelte()`); `rabbat()`
+ * stays the same. `vite dev` runs the whole stack (DO + R2) on Miniflare.
  */
 export function rabbat(options: RabbatOptions = {}): PluginOption {
   const root = options.root ?? process.cwd()
@@ -74,11 +75,10 @@ export function rabbat(options: RabbatOptions = {}): PluginOption {
     },
     configureServer(server) {
       const onChange = (file: string) => {
-        const inFunctions = file.startsWith(disco.functionsDir) && !file.includes("_generated")
-        const isSchema = file === disco.schemaPath
-        // Also regenerate when a function file's *exports* change (edit → the api
-        // tree can gain/lose entries) or the schema changes — not only add/unlink.
-        if (inFunctions || isSchema) {
+        // Regenerate on any change under the backend root (functions/, api/,
+        // schema.ts) — including edits, since a function's exports (and the api
+        // tree) can change without an add/unlink.
+        if (!file.includes("_generated") && file.startsWith(disco.backendRoot)) {
           try {
             generateAll(discover(root), name, compatDate)
           } catch (e) {
@@ -92,5 +92,7 @@ export function rabbat(options: RabbatOptions = {}): PluginOption {
     },
   }
 
-  return [react(), regen, cloudflare({ configPath: wranglerConfigPath(disco) })]
+  // Framework-agnostic: no react() here — the frontend adapter (rabbatReact())
+  // supplies it. Just codegen + the Cloudflare runtime.
+  return [regen, cloudflare({ configPath: wranglerConfigPath(disco) })]
 }

@@ -21,11 +21,21 @@ export interface Discovery {
   readonly modules: ReadonlyArray<ModuleFile>
   /** Modules exposed in the typed `api` tree (excludes setup/underscore files). */
   readonly apiModules: ReadonlyArray<ModuleFile>
+  /** `defineServerRoute` files under `<backendRoot>/api/` (default-exported). */
+  readonly serverRoutes: ReadonlyArray<ModuleFile>
   readonly configPath: string | null
 }
 
 /** Candidate backend roots, in priority order. */
 const BACKEND_DIRS = ["rabbat", "src/rabbat", "convex", "app", "src", "."]
+
+/** Locate the rabbat convention root (the directory containing `schema.ts`). */
+export function findBackendRoot(root: string, dir?: string): string | null {
+  for (const c of dir ? [dir] : BACKEND_DIRS) {
+    if (existsSync(join(root, c, "schema.ts"))) return join(root, c)
+  }
+  return null
+}
 
 function walk(dir: string, base: string, out: ModuleFile[]): void {
   for (const entry of readdirSync(dir)) {
@@ -48,14 +58,7 @@ function walk(dir: string, base: string, out: ModuleFile[]): void {
  * with the shared schema at the root.
  */
 export function discover(root: string, dir?: string): Discovery {
-  const candidates = dir ? [dir] : BACKEND_DIRS
-  let backendRoot: string | null = null
-  for (const c of candidates) {
-    if (existsSync(join(root, c, "schema.ts"))) {
-      backendRoot = join(root, c)
-      break
-    }
-  }
+  const backendRoot = findBackendRoot(root, dir)
   if (!backendRoot) {
     throw new Error(`rabbat: no schema.ts found in a backend root (looked in ${BACKEND_DIRS.join(", ")})`)
   }
@@ -69,6 +72,13 @@ export function discover(root: string, dir?: string): Discovery {
   modules.sort((a, b) => a.name.localeCompare(b.name))
 
   const apiModules = modules.filter((m) => m.name !== "setup")
+
+  // `defineServerRoute` files under `api/` (default-exported edge routes).
+  const serverRoutes: ModuleFile[] = []
+  const apiDir = join(backendRoot, "api")
+  if (existsSync(apiDir)) walk(apiDir, apiDir, serverRoutes)
+  serverRoutes.sort((a, b) => a.name.localeCompare(b.name))
+
   const configPath =
     [join(backendRoot, "config.ts"), join(root, "rabbat.config.ts")].find((p) => existsSync(p)) ?? null
 
@@ -80,6 +90,7 @@ export function discover(root: string, dir?: string): Discovery {
     generatedDir: join(backendRoot, "_generated"),
     modules,
     apiModules,
+    serverRoutes,
     configPath,
   }
 }

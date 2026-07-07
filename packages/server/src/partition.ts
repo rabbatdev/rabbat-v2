@@ -115,8 +115,43 @@ export function definePartition(config: PartitionConfig): {
       if (request.headers.get("Upgrade") === "websocket") return this.acceptWs(request, url)
       if (url.pathname.endsWith("/query")) return this.httpQuery(request)
       if (url.pathname.endsWith("/mutate")) return this.httpMutate(request)
+      if (url.pathname.endsWith("/call")) return this.httpCall(request)
       if (url.pathname.endsWith("/lsn")) return json({ watermark: this.engine.lsn() })
       return new Response("not found", { status: 404 })
+    }
+
+    /**
+     * Generic dispatch used by edge API routes (`defineServerRoute`'s
+     * `ctx.runQuery`/`runMutation`/`runAction`). Runs the named function with the
+     * caller's identity; a mutation is committed durably (persist-before-return)
+     * and its deltas fan out, exactly like the WS/HTTP mutation paths.
+     */
+    private async httpCall(request: Request): Promise<Response> {
+      let body: { kind?: unknown; name?: unknown; args?: unknown; token?: unknown }
+      try {
+        body = (await readJson(request, maxBytes)) as typeof body
+      } catch (e) {
+        return json({ error: clientError(e) }, {}, 400)
+      }
+      if (typeof body.name !== "string" || (body.kind !== "query" && body.kind !== "mutation" && body.kind !== "action")) {
+        return json({ error: "invalid call" }, {}, 400)
+      }
+      const identity = await this.identityFor(typeof body.token === "string" ? body.token : null)
+      const args = (body.args as Record<string, unknown>) ?? {}
+      try {
+        if (body.kind === "query") {
+          const r = await this.runtime.runQuery(body.name, args, identity)
+          return json({ value: r.paginated ? r.captured?.page : r.value })
+        }
+        if (body.kind === "action") {
+          return json({ value: await this.runtime.runAction(body.name, args, identity) })
+        }
+        const result = await this.serialize(() => this.runtime.runMutation(body.name as string, args, identity))
+        await this.afterCommit(result.changes, result.scheduled)
+        return json({ value: result.value })
+      } catch (e) {
+        return json({ error: clientError(e) }, {}, 400)
+      }
     }
 
     // ── WebSocket sync (Hibernation API) ──────────────────────────────────────

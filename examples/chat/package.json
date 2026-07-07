@@ -20,7 +20,8 @@
     "@rabbat/client": "workspace:*",
     "@rabbat/react": "workspace:*",
     "react": "19.2.0",
-    "react-dom": "19.2.0"
+    "react-dom": "19.2.0",
+    "@rabbat/router": "workspace:*"
   },
   "devDependencies": {
     "@rabbat/cli": "workspace:*",
@@ -29,6 +30,7 @@
     "@types/react-dom": "19.2.1",
     "vite": "8.1.0",
     "vitest": "4.1.9",
-    "wrangler": "4.105.0"
+    "wrangler": "4.105.0",
+    "@rabbat/vite-react": "workspace:*"
   }
 }

@@ -51,7 +51,7 @@ async function main(): Promise<void> {
       break
     }
     case "codegen":
-      runCodegen(process.cwd())
+      await runCodegen(process.cwd())
       break
     case undefined:
     case "help":

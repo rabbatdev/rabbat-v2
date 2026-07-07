@@ -111,10 +111,27 @@ export class FunctionsClient {
   private token: string | null
   private readonly cache?: ValueCache
 
+  /** SSR/loader-seeded snapshots, keyed by `preloadKey(name, args)`. */
+  private readonly preloads = new Map<string, Preload>()
+
   constructor(private readonly options: FunctionsClientOptions) {
     this.token = options.token ?? null
     if (options.persist) {
       this.cache = new ValueCache(typeof options.persist === "object" ? options.persist : {})
+    }
+    for (const [key, pre] of Object.entries(options.preloaded ?? {})) this.preloads.set(key, pre)
+  }
+
+  /**
+   * Seed a query snapshot at runtime (a route loader ran and fetched it), so a
+   * subscription acquired next renders from it with no flash. Applies to any
+   * already-acquired matching store that hasn't gone live yet.
+   */
+  seedPreload(name: string, args: Record<string, unknown>, pre: Preload): void {
+    const key = preloadKey(name, args)
+    this.preloads.set(key, pre)
+    for (const rec of this.subs.values()) {
+      if (preloadKey(rec.name, rec.args) === key && !rec.store.ready()) this.applyPreload(rec, pre)
     }
   }
 
@@ -385,7 +402,7 @@ export class FunctionsClient {
   }
 
   private hydrate(rec: SubRecord): void {
-    const pre = this.options.preloaded?.[preloadKey(rec.name, rec.args)]
+    const pre = this.preloads.get(preloadKey(rec.name, rec.args))
     if (pre) {
       this.applyPreload(rec, pre)
       return

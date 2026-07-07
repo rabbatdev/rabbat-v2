@@ -4,11 +4,17 @@
   "type": "module",
   "license": "MIT",
   "exports": {
-    ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" }
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "files": ["dist", "src"],
+  "files": [
+    "dist",
+    "src"
+  ],
   "scripts": {
     "build": "tsc -b",
     "typecheck": "tsc -b",
@@ -17,13 +23,17 @@
   "dependencies": {
     "@rabbat/protocol": "workspace:*",
     "@rabbat/functions": "workspace:*",
-    "@rabbat/client": "workspace:*"
+    "@rabbat/client": "workspace:*",
+    "@rabbat/router": "workspace:*"
   },
   "peerDependencies": {
-    "react": ">=18"
+    "react": ">=18",
+    "react-dom": ">=18"
   },
   "devDependencies": {
     "react": "19.2.0",
-    "@types/react": "19.2.2"
+    "@types/react": "19.2.2",
+    "react-dom": "19.2.0",
+    "@types/react-dom": "19.2.1"
   }
 }
